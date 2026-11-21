@@ -88,6 +88,9 @@ namespace DesktopSnow
         int _driftTick = 0;
         double _maxDrift = 35;
         double _groundY;
+        const double DriftSoftCap = 20.0;
+        DispatcherTimer _retryTimer;
+        bool _userWantsTopmost;
         IntPtr _hwnd = IntPtr.Zero;
         IntPtr _parentBefore = IntPtr.Zero;
 
@@ -190,7 +193,7 @@ namespace DesktopSnow
                         (int)SystemParameters.VirtualScreenLeft, (int)SystemParameters.VirtualScreenTop,
                         (int)SystemParameters.VirtualScreenWidth, (int)SystemParameters.VirtualScreenHeight,
                         SWP_NOACTIVATE | SWP_SHOWWINDOW);
-                    Log("parented to Progman directly (no WorkerW behind icons)");
+                    OnWallpaperAttached("behind windows (Progman, icons above snow)");
                     return;
                 }
 
@@ -199,7 +202,7 @@ namespace DesktopSnow
                     (int)SystemParameters.VirtualScreenLeft, (int)SystemParameters.VirtualScreenTop,
                     (int)SystemParameters.VirtualScreenWidth, (int)SystemParameters.VirtualScreenHeight,
                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
-                Log("parented to wallpaper layer");
+                OnWallpaperAttached("behind icons (WorkerW)");
             }
             catch (Exception ex)
             {
@@ -211,9 +214,49 @@ namespace DesktopSnow
         void EnableTopmostFallback(string reason)
         {
             Log("fallback to topmost: " + reason);
+            if (_userWantsTopmost)
+            {
+                return;
+            }
             _topmostMode = true;
             Topmost = true;
             SyncTrayCheckState();
+            StartWallpaperRetry();
+        }
+
+        void OnWallpaperAttached(string how)
+        {
+            Log("wallpaper mode: " + how);
+            _topmostMode = false;
+            Topmost = false;
+            StopWallpaperRetry();
+            SyncTrayCheckState();
+        }
+
+        void StartWallpaperRetry()
+        {
+            if (_retryTimer != null) return;
+            _retryTimer = new DispatcherTimer();
+            _retryTimer.Interval = TimeSpan.FromSeconds(20);
+            _retryTimer.Tick += delegate
+            {
+                if (_topmostMode && !_userWantsTopmost)
+                {
+                    Log("retry wallpaper attach");
+                    SendBehindDesktopIcons();
+                }
+                if (!_topmostMode || _userWantsTopmost) StopWallpaperRetry();
+            };
+            _retryTimer.Start();
+        }
+
+        void StopWallpaperRetry()
+        {
+            if (_retryTimer != null)
+            {
+                _retryTimer.Stop();
+                _retryTimer = null;
+            }
         }
 
         void OnDisplayChanged(object sender, EventArgs e)
@@ -274,17 +317,27 @@ namespace DesktopSnow
 
         void OnClickTopmost(object sender, EventArgs e)
         {
-            _topmostMode = !_topmostMode;
-            if (_topmostMode)
+            if (!_topmostMode)
             {
-                if (_parentBefore == IntPtr.Zero) _parentBefore = GetParentSafe(_hwnd);
+                _userWantsTopmost = true;
+                StopWallpaperRetry();
                 SetParent(_hwnd, IntPtr.Zero);
                 Topmost = true;
+                _topmostMode = true;
             }
             else
             {
+                _userWantsTopmost = false;
                 Topmost = false;
                 SendBehindDesktopIcons();
+                if (_topmostMode)
+                {
+                    _tray.ShowBalloonTip(6000, "DesktopSnow",
+                        "Windows не дал спрятать снег за обоями. Перезапусти Проводник " +
+                        "(Ctrl+Shift+Esc -> 'Проводник' -> правый клик -> Перезапустить) - " +
+                        "снег перенесётся за обои автоматически.",
+                        SWF.ToolTipIcon.Warning);
+                }
             }
             SyncTrayCheckState();
         }
@@ -404,7 +457,9 @@ namespace DesktopSnow
             pts.Add(new Point(0, _groundY));
             for (int i = 0; i < _depths.Length; i++)
             {
-                pts.Add(new Point(i * _driftSegment, _groundY - _depths[i]));
+                double wobble = 1.0 + 0.05 * Math.Sin(i * 0.31 + _t * 0.4);
+                double baseLine = Math.Min(1.2, _depths[i] * 0.25);
+                pts.Add(new Point(i * _driftSegment, _groundY - _depths[i] * wobble - baseLine));
             }
             pts.Add(new Point(W(), _groundY));
             _drift.Points = pts;
@@ -457,7 +512,9 @@ namespace DesktopSnow
 
             for (int i = 0; i < _depths.Length; i++)
             {
-                _depths[i] -= 0.03 * dt;
+                double excess = _depths[i] - DriftSoftCap;
+                double melt = (excess > 0.0) ? 0.02 + excess * 0.25 : 0.02;
+                _depths[i] -= melt * dt;
                 if (_depths[i] > _maxDrift) _depths[i] = _maxDrift;
                 if (_depths[i] < 0) _depths[i] = 0;
             }
