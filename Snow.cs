@@ -161,13 +161,13 @@ namespace DesktopSnow
         double _santaCheckTimer;
         TransformGroup _trainTf;
         RotateTransform _trainRot;
-        readonly List<Drop> _drops = new List<Drop>();
+        readonly List<SnowDrop> _drops = new List<SnowDrop>();
         readonly List<Confetto> _confetti = new List<Confetto>();
         readonly List<RotateTransform> _legTfs = new List<RotateTransform>();
         readonly List<RotateTransform> _headTfs = new List<RotateTransform>();
         RotateTransform _armTf;
         double _trailTimer;
-        Drop _grabbed;
+        SnowDrop _grabbed;
         double _grabLastX;
         double _grabLastY;
         uint _grabLastTime;
@@ -201,7 +201,7 @@ namespace DesktopSnow
         HookProc _hookProc;
         IntPtr _hook = IntPtr.Zero;
 
-        class Drop
+        class SnowDrop
         {
             public bool IsTree;
             public bool Stuck;
@@ -212,6 +212,7 @@ namespace DesktopSnow
             public Canvas Host;
             public double X;
             public double Y;
+            public double PrevY;
             public double Vx;
             public double Vy;
             public double Sink;
@@ -587,7 +588,7 @@ namespace DesktopSnow
                             return (IntPtr)1;
                         }
                     }
-                    Drop hit = FindClickableDrop(mx, my);
+                    SnowDrop hit = FindClickableDrop(mx, my);
                     if (hit != null)
                     {
                         Dispatcher.BeginInvoke((Action)delegate { PopDrop(hit); });
@@ -595,7 +596,7 @@ namespace DesktopSnow
                     }
                     if (_grabbed == null)
                     {
-                        Drop tree = FindGrabbableTree(mx, my);
+                        SnowDrop tree = FindGrabbableTree(mx, my);
                         if (tree != null)
                         {
                             Dispatcher.BeginInvoke((Action)delegate { GrabTree(tree, mx, my); });
@@ -618,11 +619,11 @@ namespace DesktopSnow
             return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
 
-        Drop FindClickableDrop(double mx, double my)
+        SnowDrop FindClickableDrop(double mx, double my)
         {
             for (int i = 0; i < _drops.Count; i++)
             {
-                Drop d = _drops[i];
+                SnowDrop d = _drops[i];
                 if (d.Popped || d.IsTree || !d.Stuck) continue;
                 double l = Canvas.GetLeft(d.Shape), t = Canvas.GetTop(d.Shape);
                 if (mx >= l - 8 && mx <= l + d.Shape.Width + 8 && my >= t - 8 && my <= t + d.Shape.Height + 8)
@@ -633,11 +634,11 @@ namespace DesktopSnow
             return null;
         }
 
-        Drop FindGrabbableTree(double mx, double my)
+        SnowDrop FindGrabbableTree(double mx, double my)
         {
             for (int i = 0; i < _drops.Count; i++)
             {
-                Drop d = _drops[i];
+                SnowDrop d = _drops[i];
                 if (!d.IsTree || d.Popped || d.Held || !d.Stuck) continue;
                 double l = Canvas.GetLeft(d.Shape), t = Canvas.GetTop(d.Shape);
                 if (mx >= l - 8 && mx <= l + d.Shape.Width + 8 && my >= t - 8 && my <= t + d.Shape.Height + 8)
@@ -648,7 +649,7 @@ namespace DesktopSnow
             return null;
         }
 
-        void GrabTree(Drop d, double mx, double my)
+        void GrabTree(SnowDrop d, double mx, double my)
         {
             _grabbed = d;
             d.Held = true;
@@ -675,7 +676,7 @@ namespace DesktopSnow
             Log("tree grabbed");
         }
 
-        void SetHeldPosition(Drop d, double mx, double my)
+        void SetHeldPosition(SnowDrop d, double mx, double my)
         {
             d.X = mx + _grabOffX;
             d.Y = my + _grabOffY;
@@ -683,7 +684,7 @@ namespace DesktopSnow
 
         void MoveGrabbed(double mx, double my, uint tstamp)
         {
-            Drop d = _grabbed;
+            SnowDrop d = _grabbed;
             if (d == null || !d.Held) return;
             double dx = mx - _grabLastX;
             SetHeldPosition(d, mx, my);
@@ -706,7 +707,7 @@ namespace DesktopSnow
 
         void ReleaseGrabbed()
         {
-            Drop d = _grabbed;
+            SnowDrop d = _grabbed;
             if (d == null) return;
             _grabbed = null;
             d.Held = false;
@@ -1015,7 +1016,7 @@ namespace DesktopSnow
 
             for (int i = _drops.Count - 1; i >= 0; i--)
             {
-                Drop d = _drops[i];
+                SnowDrop d = _drops[i];
                 if (d.Popped)
                 {
                     _drops.RemoveAt(i);
@@ -1344,7 +1345,7 @@ namespace DesktopSnow
 
         void SpawnDrop(double x, double y, double vx, double vy, bool tree)
         {
-            Drop d = new Drop();
+            SnowDrop d = new SnowDrop();
             d.IsTree = tree;
             d.X = x;
             d.Y = y;
@@ -1640,7 +1641,7 @@ namespace DesktopSnow
         {
             for (int i = 0; i < _drops.Count; i++)
             {
-                Drop d = _drops[i];
+                SnowDrop d = _drops[i];
                 if (d.RoofHwnd != roof.Hwnd || d.Held) continue;
                 d.RoofHwnd = IntPtr.Zero;
                 d.Stuck = false;
@@ -1735,7 +1736,7 @@ namespace DesktopSnow
             return null;
         }
 
-        Roof FindLandingRoof(Drop d, double h)
+        Roof FindLandingRoof(SnowDrop d, double h)
         {
             if (_roofCanvas == null) return null;
             double cx = d.X + d.Shape.Width / 2.0;
@@ -1753,7 +1754,7 @@ namespace DesktopSnow
             return null;
         }
 
-        void LandDropOnRoof(Drop d, Roof roof, double h)
+        void LandDropOnRoof(SnowDrop d, Roof roof, double h)
         {
             d.Stuck = true;
             d.Flung = false;
@@ -1773,7 +1774,7 @@ namespace DesktopSnow
         {
             for (int i = 0; i < _drops.Count; i++)
             {
-                Drop d = _drops[i];
+                SnowDrop d = _drops[i];
                 if (!d.IsTree && d.Stuck && !d.Popped && d.RoofHwnd == IntPtr.Zero) return true;
             }
             return false;
@@ -1951,7 +1952,7 @@ namespace DesktopSnow
                 double handX = _grinchX + ((_grinchDir > 0) ? w + 6.0 : -6.0);
                 for (int i = 0; i < _drops.Count; i++)
                 {
-                    Drop d = _drops[i];
+                    SnowDrop d = _drops[i];
                     if (d.IsTree || d.Popped || d.Held || !d.Stuck || d.RoofHwnd != IntPtr.Zero) continue;
                     double dcx = d.X + d.Shape.Width / 2.0;
                     if (Math.Abs(dcx - handX) < 30.0)
@@ -1997,7 +1998,7 @@ namespace DesktopSnow
             }
         }
 
-        void PopDrop(Drop d)
+        void PopDrop(SnowDrop d)
         {
             if (d.Popped) return;
             d.Popped = true;
