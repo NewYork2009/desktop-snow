@@ -45,6 +45,31 @@ namespace DesktopSnow
         const string AppName = "DesktopSnow";
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
+        static string _logPath;
+
+        static void Log(string message)
+        {
+            try
+            {
+                System.IO.File.AppendAllText(_logPath,
+                    DateTime.Now.ToString("HH:mm:ss") + "  " + message + Environment.NewLine);
+            }
+            catch (Exception) { }
+        }
+
+        static string FindLogPath()
+        {
+            try
+            {
+                string dir = System.IO.Path.GetDirectoryName(ExePath());
+                return System.IO.Path.Combine(dir, "DesktopSnow.log");
+            }
+            catch (Exception)
+            {
+                return System.IO.Path.Combine(System.IO.Path.GetTempPath(), "DesktopSnow.log");
+            }
+        }
+
         Canvas _canvas;
         DispatcherTimer _timer;
         Stopwatch _clock;
@@ -95,14 +120,25 @@ namespace DesktopSnow
 
         void OnLoaded(object sender, RoutedEventArgs e)
         {
-            _hwnd = new WindowInteropHelper(this).Handle;
-            ApplyExtendedStyles();
-            SendBehindDesktopIcons();
-            SetupTray();
-            EnsureAutostart();
-            StartAnimation();
-            _tray.ShowBalloonTip(4000, "DesktopSnow",
-                "Снег запущен. Управление: значок снежинки возле часов.", SWF.ToolTipIcon.Info);
+            try
+            {
+                _hwnd = new WindowInteropHelper(this).Handle;
+                Log("hwnd ok: " + _hwnd);
+                ApplyExtendedStyles();
+                SendBehindDesktopIcons();
+                SetupTray();
+                EnsureAutostart();
+                StartAnimation();
+                Log("started, flakes target: " + _targetCount + ", topmost mode: " + _topmostMode);
+                _tray.ShowBalloonTip(4000, "DesktopSnow",
+                    "Снег запущен. Управление: значок снежинки возле часов.", SWF.ToolTipIcon.Info);
+            }
+            catch (Exception ex)
+            {
+                Log("OnLoaded error: " + ex);
+                System.Windows.MessageBox.Show(ex.ToString(), "DesktopSnow: error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         void ApplyExtendedStyles()
@@ -120,23 +156,35 @@ namespace DesktopSnow
             try
             {
                 IntPtr progman = FindWindow("Progman", null);
-                if (progman == IntPtr.Zero) { EnableTopmostFallback(); return; }
+                Log("progman: " + progman);
+                if (progman == IntPtr.Zero) { EnableTopmostFallback("Progman not found"); return; }
+                SendMessage(progman, 0x052C, IntPtr.Zero, IntPtr.Zero);
+                System.Threading.Thread.Sleep(200);
                 SendMessage(progman, 0x052C, IntPtr.Zero, IntPtr.Zero);
 
                 IntPtr workerw = IntPtr.Zero;
-                EnumWindows(delegate(IntPtr top, IntPtr lp)
+                for (int attempt = 0; attempt < 2 && workerw == IntPtr.Zero; attempt++)
                 {
-                    IntPtr defview = FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null);
-                    if (defview != IntPtr.Zero)
+                    EnumWindows(delegate(IntPtr top, IntPtr lp)
                     {
-                        workerw = FindWindowEx(IntPtr.Zero, top, "WorkerW", null);
+                        IntPtr defview = FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null);
+                        if (defview != IntPtr.Zero)
+                        {
+                            workerw = FindWindowEx(IntPtr.Zero, top, "WorkerW", null);
+                        }
+                        return true;
+                    }, IntPtr.Zero);
+                    if (workerw == IntPtr.Zero)
+                    {
+                        Log("workerw empty, retry " + attempt);
+                        System.Threading.Thread.Sleep(300);
                     }
-                    return true;
-                }, IntPtr.Zero);
+                }
+                Log("workerw: " + workerw);
 
                 if (workerw == IntPtr.Zero)
                 {
-                    EnableTopmostFallback();
+                    EnableTopmostFallback("WorkerW not found");
                     return;
                 }
 
@@ -145,15 +193,18 @@ namespace DesktopSnow
                     (int)SystemParameters.VirtualScreenLeft, (int)SystemParameters.VirtualScreenTop,
                     (int)SystemParameters.VirtualScreenWidth, (int)SystemParameters.VirtualScreenHeight,
                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                Log("parented to wallpaper layer");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                EnableTopmostFallback();
+                Log("wallpaper mode error: " + ex.Message);
+                EnableTopmostFallback("exception");
             }
         }
 
-        void EnableTopmostFallback()
+        void EnableTopmostFallback(string reason)
         {
+            Log("fallback to topmost: " + reason);
             _topmostMode = true;
             Topmost = true;
             SyncTrayCheckState();
@@ -379,10 +430,23 @@ namespace DesktopSnow
         [STAThread]
         public static void Main()
         {
-            Application app = new Application();
-            app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            SnowWindow window = new SnowWindow();
-            app.Run(window);
+            _logPath = FindLogPath();
+            try
+            {
+                Log("— program start —");
+                SWF.Application.EnableVisualStyles();
+                Application app = new Application();
+                app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+                SnowWindow window = new SnowWindow();
+                app.Run(window);
+                Log("— normal exit —");
+            }
+            catch (Exception ex)
+            {
+                Log("FATAL: " + ex);
+                System.Windows.MessageBox.Show(ex.ToString(), "DesktopSnow: error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 }
