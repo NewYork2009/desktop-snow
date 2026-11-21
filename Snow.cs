@@ -423,10 +423,7 @@ namespace DesktopSnow
 
         double W() { return SystemParameters.VirtualScreenWidth; }
         double H() { return SystemParameters.VirtualScreenHeight; }
-    }
 
-    public static class Program
-    {
         [STAThread]
         public static void Main()
         {
