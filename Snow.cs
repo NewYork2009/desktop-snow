@@ -279,6 +279,11 @@ namespace DesktopSnow
             menu.MenuItems.Add(new SWF.MenuItem("Больше снега", delegate { _targetCount += 80; TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Меньше снега", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("-"));
+            menu.MenuItems.Add(new SWF.MenuItem("Диагностика (открыть лог)", delegate
+            {
+                try { System.Diagnostics.Process.Start("notepad.exe", _logPath); }
+                catch (Exception) { }
+            }));
             menu.MenuItems.Add(_miAutostart);
             menu.MenuItems.Add(new SWF.MenuItem("Выход", delegate { Quit(); }));
 

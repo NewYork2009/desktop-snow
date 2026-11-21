@@ -2,10 +2,13 @@
 rem Build DesktopSnow.exe using the C# compiler bundled with Windows.
 
 setlocal
+rem Kill the previous instance so the exe can be overwritten.
+taskkill /f /im DesktopSnow.exe >nul 2>&1
+
 set CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 if not exist "%CSC%" set CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe
 if not exist "%CSC%" (
-    echo C# compiler not found. .NET Framework 4.x is required ^(it ships with Windows 10/11^).
+    echo C# compiler not found. .NET Framework 4.x is required (it ships with Windows 10/11).
     pause
     exit /b 1
 )
