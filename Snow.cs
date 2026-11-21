@@ -115,6 +115,25 @@ namespace DesktopSnow
         const double DriftSoftCap = 15.0;
         double _maxDrift = 35;
 
+        Canvas _train;
+        bool _trainActive;
+        int _trainDir = 1;
+        double _trainX, _trainY;
+        const double TrainSpeed = 230.0;
+        double _dropTimer;
+        double _santaCheckTimer;
+        readonly List<Gift> _fallingGifts = new List<Gift>();
+        readonly List<Canvas> _stuckGifts = new List<Canvas>();
+
+        class Gift
+        {
+            public double X;
+            public double Y;
+            public double Vx;
+            public double Vy;
+            public Canvas Shape;
+        }
+
         class Flake
         {
             public double X;
@@ -576,6 +595,270 @@ namespace DesktopSnow
                 Canvas.SetLeft(f.Shape, f.X - f.R);
                 Canvas.SetTop(f.Shape, f.Y - f.R);
             }
+
+            SantaTick(dt);
+        }
+
+        void SantaTick(double dt)
+        {
+            _santaCheckTimer += dt;
+            if (_santaCheckTimer >= 30.0)
+            {
+                _santaCheckTimer = 0.0;
+                if (!_trainActive && _rng.NextDouble() < 0.25)
+                {
+                    SpawnTrain();
+                }
+            }
+
+            if (_trainActive)
+            {
+                _trainX += _trainDir * TrainSpeed * dt;
+                Canvas.SetLeft(_train, _trainDir > 0 ? _trainX : _trainX - 150);
+                _dropTimer -= dt;
+                if (_dropTimer <= 0.0)
+                {
+                    _dropTimer = 0.5 + _rng.NextDouble() * 0.6; // интервал между подарками
+                    double giftX = _trainX + 60 + _rng.NextDouble() * 50;
+                    SpawnGift(giftX, _trainY + 30, _trainDir * 30.0 + _wind, 0.0);
+                }
+
+                if ((_trainDir > 0 && _trainX > W() + 60) || (_trainDir < 0 && _trainX < -220))
+                {
+                    _canvas.Children.Remove(_train);
+                    _train = null;
+                    _trainActive = false;
+                    Log("santa pass finished");
+                }
+            }
+
+            double gravity = 500.0;
+            for (int i = _fallingGifts.Count - 1; i >= 0; i--)
+            {
+                Gift g = _fallingGifts[i];
+                g.Vy += gravity * dt;
+                g.X += g.Vx * dt;
+                g.Y += g.Vy * dt;
+
+                double landY = _groundY - _depths[DriftIndexFor(g.X)];
+                if (g.Y >= landY)
+                {
+                    _fallingGifts.RemoveAt(i);
+                    Canvas.SetLeft(g.Shape, g.X);
+                    Canvas.SetTop(g.Shape, landY - 9);
+                    _stuckGifts.Add(g.Shape);
+                    if (_stuckGifts.Count > 20)
+                    {
+                        Canvas oldest = _stuckGifts[0];
+                        _stuckGifts.RemoveAt(0);
+                        _canvas.Children.Remove(oldest);
+                    }
+                    continue;
+                }
+                Canvas.SetLeft(g.Shape, g.X);
+                Canvas.SetTop(g.Shape, g.Y);
+            }
+        }
+
+        void SpawnTrain()
+        {
+            _trainDir = (_rng.NextDouble() < 0.5) ? 1 : -1;
+            _trainX = (_trainDir > 0) ? -260.0 : W() + 260.0;
+            _trainY = 50 + _rng.NextDouble() * (H() * 0.25);
+            _dropTimer = 0.6;
+
+            _train = BuildTrain();
+            if (_trainDir < 0)
+            {
+                _train.RenderTransformOrigin = new Point(0.5, 0.5);
+                _train.RenderTransform = new ScaleTransform(-1, 1);
+            }
+            Canvas.SetLeft(_train, _trainDir > 0 ? _trainX : _trainX - 150);
+            Canvas.SetTop(_train, _trainY);
+            _canvas.Children.Add(_train);
+            _trainActive = true;
+            Log("santa pass started");
+        }
+
+        Canvas BuildTrain()
+        {
+            Canvas train = new Canvas();
+            train.Width = 150;
+            train.Height = 70;
+
+            // олени (справа, упряжка летит вправо)
+            int[] deerX = new int[] { 62, 92, 122 };
+            foreach (int cx in deerX)
+            {
+                train.Children.Add(ShapeAt(new Ellipse
+                {
+                    Width = 20, Height = 11,
+                    Fill = new SolidColorBrush(Color.FromRgb(107, 66, 38))
+                }, cx - 10, 25));
+
+                train.Children.Add(ShapeAt(new Ellipse
+                {
+                    Width = 7, Height = 7,
+                    Fill = new SolidColorBrush(Color.FromRgb(107, 66, 38))
+                }, cx + 7, 15));
+
+                Polyline antlers = new Polyline();
+                antlers.Points = new PointCollection
+                {
+                    new Point(cx + 10, 16), new Point(cx + 13, 8),
+                    new Point(cx + 16, 12), new Point(cx + 18, 6)
+                };
+                antlers.Stroke = new SolidColorBrush(Color.FromRgb(63, 39, 18));
+                antlers.StrokeThickness = 1.5;
+                train.Children.Add(antlers);
+
+                train.Children.Add(ShapeAt(new Ellipse
+                {
+                    Width = 3.5, Height = 3.5,
+                    Fill = new SolidColorBrush(Color.FromRgb(220, 40, 40))
+                }, cx + 13, 17));
+
+                Polyline legs = new Polyline();
+                legs.Points = new PointCollection
+                {
+                    new Point(cx - 3, 34), new Point(cx - 6, 42),
+                    new Point(cx + 3, 34), new Point(cx + 6, 41)
+                };
+                legs.Stroke = new SolidColorBrush(Color.FromRgb(63, 39, 18));
+                legs.StrokeThickness = 1.5;
+                train.Children.Add(legs);
+            }
+
+            // поводья
+            Polyline reins = new Polyline();
+            reins.Points = new PointCollection
+            {
+                new Point(34, 28), new Point(66, 25), new Point(96, 25),
+                new Point(126, 25)
+            };
+            reins.Stroke = new SolidColorBrush(Color.FromRgb(90, 58, 26));
+            reins.StrokeThickness = 1;
+            train.Children.Add(reins);
+
+            // мешок с подарками
+            train.Children.Add(ShapeAt(new Ellipse
+            {
+                Width = 14, Height = 16,
+                Fill = new SolidColorBrush(Color.FromRgb(138, 90, 43))
+            }, -6, 14));
+
+            // сани
+            Rectangle sleigh = new Rectangle
+            {
+                Width = 36, Height = 14,
+                RadiusX = 4, RadiusY = 4,
+                Fill = new SolidColorBrush(Color.FromRgb(204, 34, 34))
+            };
+            train.Children.Add(ShapeAt(sleigh, 0, 26));
+
+            Rectangle trim = new Rectangle
+            {
+                Width = 36, Height = 3,
+                Fill = new SolidColorBrush(Color.FromRgb(230, 190, 60))
+            };
+            train.Children.Add(ShapeAt(trim, 0, 26));
+
+            Polyline runner = new Polyline();
+            runner.Points = new PointCollection
+            {
+                new Point(2, 46), new Point(30, 46), new Point(34, 42)
+            };
+            runner.Stroke = new SolidColorBrush(Color.FromRgb(230, 190, 60));
+            runner.StrokeThickness = 1.5;
+            train.Children.Add(runner);
+
+            // Санта
+            train.Children.Add(ShapeAt(new Ellipse
+            {
+                Width = 12, Height = 11,
+                Fill = new SolidColorBrush(Color.FromRgb(204, 34, 34))
+            }, 20, 16));
+            train.Children.Add(ShapeAt(new Ellipse
+            {
+                Width = 7, Height = 7,
+                Fill = new SolidColorBrush(Color.FromRgb(240, 200, 160))
+            }, 22, 8));
+            train.Children.Add(ShapeAt(new Ellipse
+            {
+                Width = 8, Height = 6,
+                Fill = Brushes.White
+            }, 21, 12));
+
+            Polygon hat = new Polygon();
+            hat.Points = new PointCollection
+            {
+                new Point(20, 8), new Point(29, 8), new Point(31, 0)
+            };
+            hat.Fill = new SolidColorBrush(Color.FromRgb(204, 34, 34));
+            train.Children.Add(hat);
+            train.Children.Add(ShapeAt(new Ellipse
+            {
+                Width = 4, Height = 4,
+                Fill = Brushes.White
+            }, 30, 0));
+
+            return train;
+        }
+
+        FrameworkElement ShapeAt(FrameworkElement el, double x, double y)
+        {
+            Canvas.SetLeft(el, x);
+            Canvas.SetTop(el, y);
+            return el;
+        }
+
+        void SpawnGift(double x, double y, double vx, double vy)
+        {
+            Gift g = new Gift();
+            g.X = x;
+            g.Y = y;
+            g.Vx = vx;
+            g.Vy = vy;
+            g.Shape = BuildGift();
+            Canvas.SetLeft(g.Shape, x);
+            Canvas.SetTop(g.Shape, y);
+            _fallingGifts.Add(g);
+            _canvas.Children.Add(g.Shape);
+        }
+
+        Canvas BuildGift()
+        {
+            byte[] boxColors = new byte[] { 200, 40, 60, 160, 220, 40, 80 };
+            Canvas gift = new Canvas();
+            gift.Width = 12;
+            gift.Height = 10;
+
+            Rectangle box = new Rectangle
+            {
+                Width = 10, Height = 8,
+                RadiusX = 1, RadiusY = 1,
+                Fill = new SolidColorBrush(Color.FromRgb(
+                    boxColors[_rng.Next(0, 3)],
+                    boxColors[_rng.Next(3, 6)],
+                    boxColors[_rng.Next(5, 7)]))
+            };
+            gift.Children.Add(ShapeAt(box, 1, 1));
+
+            Rectangle vRibbon = new Rectangle
+            {
+                Width = 2, Height = 8,
+                Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200))
+            };
+            gift.Children.Add(ShapeAt(vRibbon, 5, 1));
+
+            Rectangle hRibbon = new Rectangle
+            {
+                Width = 10, Height = 2,
+                Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200))
+            };
+            gift.Children.Add(ShapeAt(hRibbon, 1, 4));
+
+            return gift;
         }
 
         double W() { return SystemParameters.VirtualScreenWidth; }
