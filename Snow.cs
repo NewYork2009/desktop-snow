@@ -164,6 +164,7 @@ namespace DesktopSnow
             public double Sink;
             public double Rot;
             public double RotSpeed;
+            public double RotTarget;
             public RotateTransform Rtf;
             public Canvas Shape;
         }
@@ -772,13 +773,25 @@ namespace DesktopSnow
                     d.Vy += 500.0 * dt;
                     d.X += d.Vx * dt;
                     d.Y += d.Vy * dt;
-                    d.Rot += d.RotSpeed * dt;
+                    if (d.IsTree)
+                    {
+                        double diff = d.RotTarget - d.Rot;
+                        double step = 260.0 * dt;
+                        if (Math.Abs(diff) <= step) d.Rot = d.RotTarget;
+                        else d.Rot += Math.Sign(diff) * step;
+                    }
+                    else
+                    {
+                        d.Rot += d.RotSpeed * dt;
+                    }
                     if (d.Rtf != null) d.Rtf.Angle = d.Rot;
                     if (d.Y + h >= landY)
                     {
                         d.Stuck = true;
                         d.Sink = d.IsTree ? 8.0 : 6.0;
                         d.Y = landY - h + d.Sink;
+                        if (d.IsTree) d.Rot = d.RotTarget;
+                        if (d.Rtf != null) d.Rtf.Angle = d.Rot;
                         System.Windows.Controls.Panel.SetZIndex(d.Shape, 40);
                         SnowSplash(d.X + d.Shape.Width / 2.0, landY);
                         DepositSnow(d.X, 5.0);
@@ -949,8 +962,18 @@ namespace DesktopSnow
             d.Y = y;
             d.Vx = vx;
             d.Vy = vy;
-            d.RotSpeed = -110.0 + _rng.NextDouble() * 220.0;
-            d.Rtf = new RotateTransform(0);
+            if (tree)
+            {
+                d.RotTarget = (_rng.NextDouble() < 0.5) ? 0.0 : (180.0 + (_rng.NextDouble() < 0.5 ? 0.0 : -180.0));
+                d.RotSpeed = 0.0;
+                d.Rot = (_rng.NextDouble() < 0.5) ? -18.0 : 18.0;
+            }
+            else
+            {
+                d.RotTarget = 0.0;
+                d.RotSpeed = -110.0 + _rng.NextDouble() * 220.0;
+            }
+            d.Rtf = new RotateTransform(d.Rot);
             d.Shape = tree ? BuildTree() : BuildGift();
             d.Shape.RenderTransformOrigin = new Point(0.5, 0.5);
             d.Shape.RenderTransform = d.Rtf;
@@ -1015,23 +1038,23 @@ namespace DesktopSnow
 
         void SnowSplash(double x, double y)
         {
-            for (int i = 0; i < 12; i++)
+            for (int i = 0; i < 16; i++)
             {
                 Confetto c = new Confetto();
                 double side = (_rng.NextDouble() < 0.5) ? -1.0 : 1.0;
-                double speed = 40.0 + _rng.NextDouble() * 130.0;
-                c.X = x + side * _rng.NextDouble() * 8.0;
-                c.Y = y - _rng.NextDouble() * 4.0;
+                double speed = 60.0 + _rng.NextDouble() * 170.0;
+                c.X = x + side * _rng.NextDouble() * 10.0;
+                c.Y = y - 4.0 - _rng.NextDouble() * 8.0;
                 c.Vx = side * speed;
-                c.Vy = -20.0 + _rng.NextDouble() * 100.0;
-                c.Life = 0.4 + _rng.NextDouble() * 0.4;
+                c.Vy = -60.0 - _rng.NextDouble() * 100.0;
+                c.Life = 0.6 + _rng.NextDouble() * 0.5;
                 Ellipse puff = new Ellipse
                 {
-                    Width = 2.0 + _rng.NextDouble() * 2.5,
-                    Height = 2.0 + _rng.NextDouble() * 2.5,
-                    Fill = new SolidColorBrush(Color.FromRgb(245, 250, 255))
+                    Width = 3.0 + _rng.NextDouble() * 3.5,
+                    Height = 3.0 + _rng.NextDouble() * 3.5,
+                    Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
                 };
-                puff.Opacity = 0.9;
+                puff.Opacity = 0.95;
                 c.Shape = puff;
                 System.Windows.Controls.Panel.SetZIndex(puff, 80);
                 Canvas.SetLeft(c.Shape, c.X);
