@@ -1614,7 +1614,7 @@ namespace DesktopSnow
                 }
             }
 
-            if (_driftTick % 3 == 0)
+            if (_driftTick % 2 == 0)
             {
                 RoofMeltAndSmooth();
                 UpdateRoofShapes();
@@ -1625,22 +1625,21 @@ namespace DesktopSnow
         {
             if (roof.Depths == null || _roofCanvas == null) return;
             int spawned = 0;
-            for (int i = 0; i < roof.Depths.Length && spawned < 64; i++)
+            for (int i = 0; i < roof.Depths.Length && spawned < 120; i++)
             {
-                if (roof.Depths[i] < 1.5) continue;
-                int n = 1 + (int)(roof.Depths[i] / 5.0);
-                for (int k = 0; k < n && spawned < 64; k++)
+                int n = (int)(roof.Depths[i] / 3.0);
+                for (int k = 0; k < n && spawned < 120; k++)
                 {
                     Confetto c = new Confetto();
                     c.X = roof.L + i * _driftSegment + _rng.NextDouble() * _driftSegment;
-                    c.Y = roof.T - roof.Depths[i] * 0.5;
-                    c.Vx = -80.0 + _rng.NextDouble() * 160.0;
-                    c.Vy = 20.0 + _rng.NextDouble() * 50.0;
-                    c.Life = 0.6 + _rng.NextDouble() * 0.6;
+                    c.Y = roof.T - _rng.NextDouble() * roof.Depths[i];
+                    c.Vx = -60.0 + _rng.NextDouble() * 120.0;
+                    c.Vy = 40.0 + _rng.NextDouble() * 100.0;
+                    c.Life = 0.4 + _rng.NextDouble() * 0.5;
                     Ellipse puff = new Ellipse
                     {
-                        Width = 2.5 + _rng.NextDouble() * 3.0,
-                        Height = 2.5 + _rng.NextDouble() * 3.0,
+                        Width = 2.0 + _rng.NextDouble() * 4.0,
+                        Height = 2.0 + _rng.NextDouble() * 4.0,
                         Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
                     };
                     c.Shape = puff;
@@ -1653,6 +1652,7 @@ namespace DesktopSnow
                 }
                 roof.Depths[i] = 0.0;
             }
+            if (roof.Poly != null) roof.Poly.Points = new PointCollection();
         }
 
         void RoofPuff(double x, double y, int count)
@@ -1715,11 +1715,14 @@ namespace DesktopSnow
                     if (dep[i] > _maxDrift) dep[i] = _maxDrift;
                     if (dep[i] < 0) dep[i] = 0;
                 }
-                double[] tmp = new double[dep.Length];
-                for (int i = 0; i < dep.Length; i++) tmp[i] = dep[i];
-                for (int i = 1; i < dep.Length - 1; i++)
+                for (int pass = 0; pass < 2; pass++)
                 {
-                    dep[i] = (tmp[i - 1] + 2.0 * tmp[i] + tmp[i + 1]) * 0.25;
+                    double[] tmp = new double[dep.Length];
+                    for (int i = 0; i < dep.Length; i++) tmp[i] = dep[i];
+                    for (int i = 1; i < dep.Length - 1; i++)
+                    {
+                        dep[i] = (tmp[i - 1] + 2.0 * tmp[i] + tmp[i + 1]) * 0.25;
+                    }
                 }
             }
         }
@@ -1741,9 +1744,12 @@ namespace DesktopSnow
                 }
                 PointCollection pts = new PointCollection();
                 pts.Add(new Point(r.L - 3, r.T + 3));
-                for (int i = 0; i < r.Depths.Length; i++)
+                int n = r.Depths.Length;
+                for (int i = 0; i < n; i++)
                 {
-                    pts.Add(new Point(r.L + i * _driftSegment, r.T - r.Depths[i]));
+                    double t = Math.Min(1.0, Math.Min(i, n - 1 - i) / 3.0);
+                    double taper = t * t * (3.0 - 2.0 * t);
+                    pts.Add(new Point(r.L + i * _driftSegment, r.T - r.Depths[i] * taper));
                 }
                 pts.Add(new Point(r.R + 3, r.T + 3));
                 pts.Add(new Point(r.R + 3, r.T + 5));
@@ -1772,16 +1778,16 @@ namespace DesktopSnow
             double share = amount / roof.Depths.Length;
             for (int i = 0; i < roof.Depths.Length; i++)
             {
-                roof.Depths[i] += share * 0.7;
+                roof.Depths[i] += share * 0.25;
             }
             int idx = (int)((x - roof.L) / _driftSegment);
             if (idx < 0) idx = 0;
             if (idx >= roof.Depths.Length) idx = roof.Depths.Length - 1;
-            for (int d = -2; d <= 2; d++)
+            for (int d = -3; d <= 3; d++)
             {
                 int j = idx + d;
                 if (j < 0 || j >= roof.Depths.Length) continue;
-                roof.Depths[j] += amount * 0.3 / (1 + d * d);
+                roof.Depths[j] += amount * 0.75 / (1 + d * d);
             }
         }
 
