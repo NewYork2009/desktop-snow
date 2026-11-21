@@ -302,6 +302,10 @@ namespace DesktopSnow
             SWF.ContextMenu menu = new SWF.ContextMenu();
             menu.MenuItems.Add(_miScreensaver);
             menu.MenuItems.Add(_miIcons);
+            menu.MenuItems.Add(new SWF.MenuItem("Вызвать Санту", delegate
+            {
+                if (!_trainActive) SpawnTrain();
+            }));
             menu.MenuItems.Add(new SWF.MenuItem("Больше снега", delegate { _targetCount += 80; TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Меньше снега", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("-"));
