@@ -86,7 +86,8 @@ namespace DesktopSnow
         double[] _depths;
         int _driftSegment = 16;
         int _driftTick = 0;
-        double _maxDrift = 140;
+        double _maxDrift = 35;
+        double _groundY;
         IntPtr _hwnd = IntPtr.Zero;
         IntPtr _parentBefore = IntPtr.Zero;
 
@@ -361,7 +362,8 @@ namespace DesktopSnow
         {
             int segments = (int)(W() / _driftSegment) + 2;
             _depths = new double[segments];
-            _maxDrift = Math.Min(150, H() * 0.18);
+            _maxDrift = 35.0;
+            _groundY = SystemParameters.WorkArea.Bottom - SystemParameters.VirtualScreenTop;
 
             _drift = new Polygon();
             _drift.Fill = new LinearGradientBrush(
@@ -381,25 +383,30 @@ namespace DesktopSnow
 
         void DepositSnow(double x, double amount)
         {
+            double share = amount / _depths.Length;
+            for (int i = 0; i < _depths.Length; i++)
+            {
+                _depths[i] += share * 0.7;
+            }
+
             int idx = DriftIndexFor(x);
-            for (int d = -2; d <= 2; d++)
+            for (int d = -3; d <= 3; d++)
             {
                 int j = idx + d;
                 if (j < 0 || j >= _depths.Length) continue;
-                _depths[j] += amount / (1 + Math.Abs(d) * Math.Abs(d));
+                _depths[j] += amount * 0.3 / (1 + d * d);
             }
         }
 
         void UpdateDriftShape()
         {
-            double height = H();
             PointCollection pts = new PointCollection();
-            pts.Add(new Point(0, height));
+            pts.Add(new Point(0, _groundY));
             for (int i = 0; i < _depths.Length; i++)
             {
-                pts.Add(new Point(i * _driftSegment, height - _depths[i]));
+                pts.Add(new Point(i * _driftSegment, _groundY - _depths[i]));
             }
-            pts.Add(new Point(W(), height));
+            pts.Add(new Point(W(), _groundY));
             _drift.Points = pts;
         }
 
@@ -447,11 +454,10 @@ namespace DesktopSnow
             if (_flakes.Count < _targetCount && _rng.NextDouble() < 0.4) AddFlake(false);
 
             double width = SystemParameters.VirtualScreenWidth;
-            double height = SystemParameters.VirtualScreenHeight;
 
             for (int i = 0; i < _depths.Length; i++)
             {
-                _depths[i] -= 0.1 * dt;
+                _depths[i] -= 0.03 * dt;
                 if (_depths[i] > _maxDrift) _depths[i] = _maxDrift;
                 if (_depths[i] < 0) _depths[i] = 0;
             }
@@ -466,13 +472,7 @@ namespace DesktopSnow
                 f.Y += f.Speed * dt;
                 f.X = f.BaseX + Math.Sin(f.Phase) * f.SwayAmp + _wind;
 
-                if (f.Y > height + 10)
-                {
-                    f.Y = -10;
-                    f.BaseX = _rng.NextDouble() * (width + 80);
-                }
-
-                double landY = height - _depths[DriftIndexFor(f.X)];
+                double landY = _groundY - _depths[DriftIndexFor(f.X)];
                 if (f.Y >= landY)
                 {
                     DepositSnow(f.X, f.R * 2.5);
