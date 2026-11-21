@@ -151,13 +151,33 @@ namespace DesktopSnow
         RotateTransform _trainRot;
         readonly List<Drop> _drops = new List<Drop>();
         readonly List<Confetto> _confetti = new List<Confetto>();
+        readonly List<RotateTransform> _legTfs = new List<RotateTransform>();
+        readonly List<RotateTransform> _headTfs = new List<RotateTransform>();
+        RotateTransform _armTf;
+        double _trailTimer;
         Drop _grabbed;
         double _grabLastX;
         double _grabLastY;
         uint _grabLastTime;
         double _flingVx;
         double _flingVy;
+        double _grabOffX;
+        double _grabOffY;
+        double _angVel;
         int _grabFxCooldown;
+        Canvas _grinch;
+        RotateTransform _grinchRot;
+        Canvas _grinchLoot;
+        bool _grinchActive;
+        bool _grinchDead;
+        bool _grinchPending;
+        int _grinchDir = 1;
+        int _grinchSteals;
+        double _grinchX;
+        double _grinchDelay;
+        double _grinchPhase;
+        double _grinchSink;
+        double _grinchStealTimer;
         HookProc _hookProc;
         IntPtr _hook = IntPtr.Zero;
 
@@ -524,6 +544,15 @@ namespace DesktopSnow
                 {
                     double mx = info.pt.X - SystemParameters.VirtualScreenLeft;
                     double my = info.pt.Y - SystemParameters.VirtualScreenTop;
+                    if (_grinchActive && !_grinchDead && _grinch != null)
+                    {
+                        double gl = Canvas.GetLeft(_grinch), gt = Canvas.GetTop(_grinch);
+                        if (mx >= gl - 8 && mx <= gl + 72 && my >= gt - 8 && my <= gt + 80)
+                        {
+                            Dispatcher.BeginInvoke((Action)delegate { GrinchDie(); });
+                            return (IntPtr)1;
+                        }
+                    }
                     Drop hit = FindClickableDrop(mx, my);
                     if (hit != null)
                     {
@@ -598,11 +627,14 @@ namespace DesktopSnow
             d.RotSpeed = 0.0;
             System.Windows.Controls.Panel.SetZIndex(d.Shape, 85);
             SetHeldPosition(d, mx, my);
+            _grabOffX = d.X - mx;
+            _grabOffY = d.Y - my;
             _grabLastX = mx;
             _grabLastY = my;
             _grabLastTime = 0;
             _flingVx = 0.0;
             _flingVy = 0.0;
+            _angVel = 0.0;
             _grabFxCooldown = 0;
             SnowSplash(d.X + d.Shape.Width / 2.0, d.Y + d.Shape.Height - 4.0, 10);
             SnowSplash(d.X + d.Shape.Width / 2.0, d.Y + d.Shape.Height - 4.0, 6);
@@ -611,8 +643,8 @@ namespace DesktopSnow
 
         void SetHeldPosition(Drop d, double mx, double my)
         {
-            d.X = mx - d.Shape.Width / 2.0;
-            d.Y = my - d.Shape.Height * 0.5;
+            d.X = mx + _grabOffX;
+            d.Y = my + _grabOffY;
         }
 
         void MoveGrabbed(double mx, double my, uint tstamp)
@@ -620,8 +652,6 @@ namespace DesktopSnow
             Drop d = _grabbed;
             if (d == null || !d.Held) return;
             double dx = mx - _grabLastX;
-            d.Rot += dx * 0.25;
-            if (d.Rtf != null) d.Rtf.Angle = d.Rot;
             SetHeldPosition(d, mx, my);
 
             if (tstamp > _grabLastTime)
@@ -637,16 +667,7 @@ namespace DesktopSnow
             _grabLastX = mx;
             _grabLastY = my;
 
-            _grabFxCooldown--;
-            if (_grabFxCooldown <= 0)
-            {
-                double speed = Math.Sqrt(_flingVx * _flingVx + _flingVy * _flingVy);
-                if (speed > 150.0)
-                {
-                    _grabFxCooldown = 4;
-                    SnowSplash(d.X + d.Shape.Width / 2.0, d.Y + d.Shape.Height - 4.0, 4);
-                }
-            }
+            _angVel = Math.Max(-900.0, Math.Min(900.0, _angVel + dx * 4.0));
         }
 
         void ReleaseGrabbed()
@@ -658,7 +679,7 @@ namespace DesktopSnow
             d.Stuck = false;
             d.Flung = true;
             d.RotTarget = d.Rot;
-            d.RotSpeed = 0.0;
+            d.RotSpeed = _angVel;
             double max = 1300.0;
             d.Vx = Math.Max(-max, Math.Min(max, _flingVx));
             d.Vy = Math.Max(-max, Math.Min(max, _flingVy * 0.8));
@@ -860,6 +881,7 @@ namespace DesktopSnow
             }
 
             SantaTick(dt);
+            GrinchTick(dt);
         }
 
         void SantaTick(double dt)
@@ -883,6 +905,38 @@ namespace DesktopSnow
                 if (_trainRot != null)
                 {
                     _trainRot.Angle = Math.Sin(_t * 1.5) * 14.0 * _trainDir;
+                }
+
+                for (int i = 0; i < _legTfs.Count; i++)
+                    _legTfs[i].Angle = Math.Sin(_t * 14.0 + i * 1.7) * 22.0;
+                for (int i = 0; i < _headTfs.Count; i++)
+                    _headTfs[i].Angle = Math.Sin(_t * 2.5 + i * 1.3) * 9.0;
+                if (_armTf != null)
+                    _armTf.Angle = -25.0 + Math.Sin(_t * 3.4) * 40.0;
+
+                _trailTimer -= dt;
+                if (_trailTimer <= 0.0)
+                {
+                    _trailTimer = 0.09;
+                    double bx = (_trainDir > 0) ? _trainX + 6.0 : _trainX - 6.0;
+                    Confetto c = new Confetto();
+                    c.X = bx + (_rng.NextDouble() * 20.0 - 10.0);
+                    c.Y = bobY + 58.0 + (_rng.NextDouble() * 10.0 - 5.0);
+                    c.Vx = -_trainDir * (50.0 + _rng.NextDouble() * 90.0);
+                    c.Vy = -30.0 + _rng.NextDouble() * 70.0;
+                    c.Life = 0.3 + _rng.NextDouble() * 0.35;
+                    bool gold = _rng.NextDouble() < 0.5;
+                    c.Shape = new Ellipse
+                    {
+                        Width = 2.0 + _rng.NextDouble() * 1.8,
+                        Height = 2.0 + _rng.NextDouble() * 1.8,
+                        Fill = new SolidColorBrush(gold ? Color.FromRgb(235, 195, 70) : Color.FromRgb(250, 250, 255))
+                    };
+                    System.Windows.Controls.Panel.SetZIndex(c.Shape, 60);
+                    Canvas.SetLeft(c.Shape, c.X);
+                    Canvas.SetTop(c.Shape, c.Y);
+                    _confetti.Add(c);
+                    _canvas.Children.Add(c.Shape);
                 }
 
                 _dropTimer -= dt;
@@ -918,6 +972,15 @@ namespace DesktopSnow
 
                 if (d.Held)
                 {
+                    _angVel -= _angVel * 1.8 * dt;
+                    d.Rot += _angVel * dt;
+                    if (d.Rtf != null) d.Rtf.Angle = d.Rot;
+                    _grabFxCooldown--;
+                    if (Math.Abs(_angVel) > 280.0 && _grabFxCooldown <= 0)
+                    {
+                        _grabFxCooldown = 6;
+                        SnowSplash(d.X + d.Shape.Width / 2.0, d.Y + d.Shape.Height - 4.0, 4);
+                    }
                 }
                 else if (!d.Stuck)
                 {
@@ -931,7 +994,7 @@ namespace DesktopSnow
                         if (Math.Abs(diff) <= step) d.Rot = d.RotTarget;
                         else d.Rot += Math.Sign(diff) * step;
                     }
-                    else if (!d.IsTree)
+                    else
                     {
                         d.Rot += d.RotSpeed * dt;
                     }
@@ -963,11 +1026,13 @@ namespace DesktopSnow
 
                     if (d.Y + h >= landY)
                     {
+                        bool wasFlung = d.Flung;
                         d.Stuck = true;
                         d.Flung = false;
                         d.Sink = d.IsTree ? 8.0 : 6.0;
                         d.Y = landY - h + d.Sink;
-                        if (d.IsTree && d.Rot != 0.0 && d.Rot != 180.0 && d.Rot != -180.0) d.Rot = d.RotTarget;
+                        if (d.IsTree && !wasFlung) d.Rot = d.RotTarget;
+                        d.RotSpeed = 0.0;
                         if (d.Rtf != null) d.Rtf.Angle = d.Rot;
                         System.Windows.Controls.Panel.SetZIndex(d.Shape, 40);
                         SnowSplash(d.X + d.Shape.Width / 2.0, landY, 14);
@@ -996,6 +1061,15 @@ namespace DesktopSnow
         void SpawnTrain()
         {
             _trainDir = (_rng.NextDouble() < 0.5) ? 1 : -1;
+            _legTfs.Clear();
+            _headTfs.Clear();
+            _armTf = null;
+            _trailTimer = 0.0;
+            if (!_grinchActive && _rng.NextDouble() < 0.4)
+            {
+                _grinchPending = true;
+                _grinchDelay = 2.0 + _rng.NextDouble() * 6.0;
+            }
             _trainX = (_trainDir > 0) ? -260.0 : W() + 260.0;
             _trainY = 50 + _rng.NextDouble() * (H() * 0.25);
             _dropTimer = 0.6; // гирлянда подарков и ёлок
@@ -1037,10 +1111,9 @@ namespace DesktopSnow
                 train.Children.Add(ShapeAt(new Ellipse { Width = 26, Height = 11, Fill = fur }, cx - 13, 34));
                 train.Children.Add(ShapeAt(new Ellipse { Width = 12, Height = 5, Fill = new SolidColorBrush(Color.FromRgb(230, 205, 170)) }, cx - 7, 38));
 
-                Line neck = new Line { X1 = cx + 10, Y1 = 37, X2 = cx + 16, Y2 = 24, Stroke = fur, StrokeThickness = 4 };
-                train.Children.Add(neck);
-
-                train.Children.Add(ShapeAt(new Ellipse { Width = 9, Height = 9, Fill = fur }, cx + 13, 18));
+                Canvas head = new Canvas();
+                head.Children.Add(new Line { X1 = cx + 10, Y1 = 37, X2 = cx + 16, Y2 = 24, Stroke = fur, StrokeThickness = 4 });
+                head.Children.Add(ShapeAt(new Ellipse { Width = 9, Height = 9, Fill = fur }, cx + 13, 18));
 
                 Polyline antlers = new Polyline();
                 antlers.Points = new PointCollection
@@ -1050,7 +1123,7 @@ namespace DesktopSnow
                 };
                 antlers.Stroke = dark;
                 antlers.StrokeThickness = 2;
-                train.Children.Add(antlers);
+                head.Children.Add(antlers);
 
                 Polyline antlers2 = new Polyline();
                 antlers2.Points = new PointCollection(new Point[]
@@ -1059,20 +1132,41 @@ namespace DesktopSnow
                 });
                 antlers2.Stroke = dark;
                 antlers2.StrokeThickness = 2;
-                train.Children.Add(antlers2);
+                head.Children.Add(antlers2);
 
-                train.Children.Add(ShapeAt(new Ellipse { Width = 4, Height = 4, Fill = new SolidColorBrush(Color.FromRgb(230, 40, 40)) }, cx + 21, 21));
+                head.Children.Add(ShapeAt(new Ellipse { Width = 4, Height = 4, Fill = new SolidColorBrush(Color.FromRgb(230, 40, 40)) }, cx + 21, 21));
 
-                Polyline legs = new Polyline();
-                legs.Points = new PointCollection(new Point[]
+                RotateTransform nod = new RotateTransform(0);
+                nod.CenterX = cx + 10;
+                nod.CenterY = 37;
+                head.RenderTransform = nod;
+                _headTfs.Add(nod);
+                train.Children.Add(head);
+
+                double[][] legPts = new double[][]
                 {
-                    new Point(cx - 9, 44), new Point(cx - 11, 58),
-                    new Point(cx + 2, 44), new Point(cx + 0, 58),
-                    new Point(cx + 9, 44), new Point(cx + 12, 57)
-                });
-                legs.Stroke = dark;
-                legs.StrokeThickness = 2;
-                train.Children.Add(legs);
+                    new double[] { cx - 9, 44, cx - 11, 58 },
+                    new double[] { cx - 2, 44, cx + 0, 58 },
+                    new double[] { cx + 9, 44, cx + 12, 57 }
+                };
+                foreach (double[] lp in legPts)
+                {
+                    Line leg = new Line
+                    {
+                        X1 = lp[0],
+                        Y1 = lp[1],
+                        X2 = lp[2],
+                        Y2 = lp[3],
+                        Stroke = dark,
+                        StrokeThickness = 2.5
+                    };
+                    RotateTransform rt = new RotateTransform(0);
+                    rt.CenterX = lp[0];
+                    rt.CenterY = lp[1];
+                    leg.RenderTransform = rt;
+                    _legTfs.Add(rt);
+                    train.Children.Add(leg);
+                }
             }
 
             // поводья
@@ -1120,6 +1214,20 @@ namespace DesktopSnow
             hat.Fill = red;
             train.Children.Add(hat);
             train.Children.Add(ShapeAt(new Ellipse { Width = 4.5, Height = 4.5, Fill = Brushes.White }, 29, -8));
+
+            Canvas armCv = new Canvas();
+            armCv.Children.Add(new Line
+            {
+                X1 = 22, Y1 = 20, X2 = 35, Y2 = 6,
+                Stroke = red, StrokeThickness = 4.5,
+                StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round
+            });
+            armCv.Children.Add(ShapeAt(new Ellipse { Width = 5, Height = 5, Fill = Brushes.White }, 32, 3));
+            _armTf = new RotateTransform(0);
+            _armTf.CenterX = 22;
+            _armTf.CenterY = 20;
+            armCv.RenderTransform = _armTf;
+            train.Children.Add(armCv);
 
             return train;
         }
@@ -1238,6 +1346,166 @@ namespace DesktopSnow
                 Canvas.SetTop(c.Shape, c.Y);
                 _confetti.Add(c);
                 _canvas.Children.Add(c.Shape);
+            }
+        }
+
+        Canvas BuildGrinch()
+        {
+            Canvas g = new Canvas();
+            g.Width = 64;
+            g.Height = 72;
+            Brush fur = new SolidColorBrush(Color.FromRgb(96, 130, 52));
+            Brush face = new SolidColorBrush(Color.FromRgb(130, 170, 70));
+            Brush darkgreen = new SolidColorBrush(Color.FromRgb(36, 54, 20));
+
+            g.Children.Add(ShapeAt(new Ellipse { Width = 34, Height = 40, Fill = fur }, 12, 28));
+            g.Children.Add(ShapeAt(new Ellipse { Width = 18, Height = 26, Fill = face }, 20, 34));
+            g.Children.Add(ShapeAt(new Ellipse { Width = 28, Height = 24, Fill = face }, 20, 4));
+            g.Children.Add(ShapeAt(new Ellipse { Width = 6, Height = 5, Fill = new SolidColorBrush(Color.FromRgb(240, 220, 80)) }, 27, 12));
+            g.Children.Add(ShapeAt(new Ellipse { Width = 6, Height = 5, Fill = new SolidColorBrush(Color.FromRgb(240, 220, 80)) }, 36, 12));
+            g.Children.Add(ShapeAt(new Ellipse { Width = 2.5, Height = 2.5, Fill = Brushes.Black }, 29, 13.5));
+            g.Children.Add(ShapeAt(new Ellipse { Width = 2.5, Height = 2.5, Fill = Brushes.Black }, 38, 13.5));
+
+            Polyline brows = new Polyline();
+            brows.Points = new PointCollection(new Point[] { new Point(26, 10), new Point(31, 12), new Point(35, 10) });
+            brows.Stroke = darkgreen;
+            brows.StrokeThickness = 1.8;
+            g.Children.Add(brows);
+
+            Polyline grin = new Polyline();
+            grin.Points = new PointCollection(new Point[] { new Point(28, 22), new Point(31, 25), new Point(34, 22), new Point(37, 25), new Point(40, 22) });
+            grin.Stroke = new SolidColorBrush(Color.FromRgb(25, 12, 12));
+            grin.StrokeThickness = 1.6;
+            g.Children.Add(grin);
+
+            Polyline tuft = new Polyline();
+            tuft.Points = new PointCollection(new Point[] { new Point(32, 4), new Point(35, -3), new Point(38, 5) });
+            tuft.Stroke = darkgreen;
+            tuft.StrokeThickness = 2;
+            g.Children.Add(tuft);
+
+            g.Children.Add(new Line { X1 = 42, Y1 = 36, X2 = 54, Y2 = 46, Stroke = fur, StrokeThickness = 3.5 });
+            g.Children.Add(new Line { X1 = 22, Y1 = 64, X2 = 18, Y2 = 72, Stroke = darkgreen, StrokeThickness = 3 });
+            g.Children.Add(new Line { X1 = 34, Y1 = 64, X2 = 38, Y2 = 72, Stroke = darkgreen, StrokeThickness = 3 });
+
+            Canvas loot = BuildGift();
+            loot.Opacity = 0.95;
+            loot.Visibility = Visibility.Collapsed;
+            _grinchLoot = loot;
+            g.Children.Add(ShapeAt(loot, 44, 34));
+
+            return g;
+        }
+
+        void SpawnGrinch()
+        {
+            _grinch = BuildGrinch();
+            _grinchDir = (_rng.NextDouble() < 0.5) ? 1 : -1;
+            _grinchX = (_grinchDir > 0) ? -90.0 : W() + 26.0;
+            TransformGroup tg = new TransformGroup();
+            if (_grinchDir < 0) tg.Children.Add(new ScaleTransform(-1, 1));
+            _grinchRot = new RotateTransform(0);
+            tg.Children.Add(_grinchRot);
+            _grinch.RenderTransformOrigin = new Point(0.5, 0.5);
+            _grinch.RenderTransform = tg;
+            Canvas.SetLeft(_grinch, _grinchX);
+            Canvas.SetTop(_grinch, _groundY - 72.0);
+            System.Windows.Controls.Panel.SetZIndex(_grinch, 60);
+            _canvas.Children.Add(_grinch);
+            _grinchActive = true;
+            _grinchDead = false;
+            _grinchSink = 0.0;
+            _grinchSteals = 0;
+            _grinchStealTimer = 1.0;
+            _grinchPhase = 0.0;
+            Log("grinch appeared");
+        }
+
+        void GrinchDie()
+        {
+            if (_grinch == null || _grinchDead || !_grinchActive) return;
+            _grinchDead = true;
+            if (_grinchLoot != null) _grinchLoot.Visibility = Visibility.Collapsed;
+            double landY = _groundY - _depths[DriftIndexFor(_grinchX + 32.0)];
+            SnowSplash(_grinchX + 32.0, landY, 10);
+            Log("grinch downed");
+        }
+
+        void GrinchTick(double dt)
+        {
+            if (_grinchPending)
+            {
+                _grinchDelay -= dt;
+                if (_grinchDelay <= 0.0)
+                {
+                    _grinchPending = false;
+                    SpawnGrinch();
+                }
+            }
+            if (!_grinchActive || _grinch == null) return;
+
+            double w = 64.0, h = 72.0;
+            double landY = _groundY - _depths[DriftIndexFor(_grinchX + w / 2.0)];
+
+            if (_grinchDead)
+            {
+                if (_grinchRot.Angle < 94.0)
+                {
+                    _grinchRot.Angle = Math.Min(94.0, _grinchRot.Angle + 260.0 * dt);
+                }
+                else
+                {
+                    _grinchSink += 10.0 * dt;
+                    if (_grinchSink >= h)
+                    {
+                        _canvas.Children.Remove(_grinch);
+                        _grinch = null;
+                        _grinchActive = false;
+                        Log("grinch buried");
+                        return;
+                    }
+                }
+                Canvas.SetLeft(_grinch, _grinchX);
+                Canvas.SetTop(_grinch, landY - h + _grinchSink);
+                if (_driftTick % 10 == 0) SnowSplash(_grinchX + w / 2.0, landY, 3);
+                return;
+            }
+
+            _grinchPhase += dt * 8.0;
+            _grinchX += _grinchDir * 95.0 * dt;
+            double bob = Math.Sin(_grinchPhase * 2.0) * 1.5;
+            Canvas.SetLeft(_grinch, _grinchX);
+            Canvas.SetTop(_grinch, landY - h + bob);
+
+            _grinchStealTimer -= dt;
+            if (_grinchStealTimer <= 0.0)
+            {
+                _grinchStealTimer = 0.45;
+                double handX = _grinchX + ((_grinchDir > 0) ? w + 6.0 : -6.0);
+                for (int i = 0; i < _drops.Count; i++)
+                {
+                    Drop d = _drops[i];
+                    if (d.IsTree || d.Popped || d.Held || !d.Stuck) continue;
+                    double dcx = d.X + d.Shape.Width / 2.0;
+                    if (Math.Abs(dcx - handX) < 30.0)
+                    {
+                        _canvas.Children.Remove(d.Shape);
+                        d.Popped = true;
+                        _grinchLoot.Visibility = Visibility.Visible;
+                        _grinchSteals++;
+                        SnowSplash(dcx, landY, 6);
+                        Log("grinch stole a gift");
+                        break;
+                    }
+                }
+            }
+
+            if ((_grinchDir > 0 && _grinchX > W() + 40.0) || (_grinchDir < 0 && _grinchX < -140.0))
+            {
+                _canvas.Children.Remove(_grinch);
+                _grinch = null;
+                _grinchActive = false;
+                Log("grinch left");
             }
         }
 
