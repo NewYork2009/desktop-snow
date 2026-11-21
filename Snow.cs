@@ -197,21 +197,14 @@ namespace DesktopSnow
 
         SD.Icon MakeIcon()
         {
-            using (SD.Bitmap bmp = new SD.Bitmap(16, 16))
+            SD.Bitmap bmp = new SD.Bitmap(16, 16);
+            using (SD.Graphics g = SD.Graphics.FromImage(bmp))
             {
-                using (SD.Graphics g = SD.Graphics.FromImage(bmp))
-                {
-                    g.Clear(SD.Color.Transparent);
-                    g.FillEllipse(SD.Brushes.White, 3, 2, 10, 12);
-                    g.FillEllipse(SD.Brushes.White, 2, 6, 12, 3);
-                }
-                using (System.IO.MemoryStream stream = new System.IO.MemoryStream())
-                {
-                    bmp.Save(stream, SD.Imaging.ImageFormat.Icon);
-                    stream.Position = 0;
-                    return SD.Icon.FromStream(stream);
-                }
+                g.Clear(SD.Color.Transparent);
+                g.FillEllipse(SD.Brushes.White, 3, 2, 10, 12);
+                g.FillEllipse(SD.Brushes.White, 2, 6, 12, 3);
             }
+            return SD.Icon.FromHandle(bmp.GetHicon());
         }
 
         void OnClickAutostart(object sender, EventArgs e)
