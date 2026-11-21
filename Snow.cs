@@ -45,8 +45,22 @@ namespace DesktopSnow
         [DllImport("user32.dll")] static extern IntPtr SetWindowsHookEx(int idHook, HookProc lpfn, IntPtr hMod, uint dwThreadId);
         [DllImport("user32.dll")] static extern bool UnhookWindowsHookEx(IntPtr hhk);
         [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")] static extern bool EnumWindows(EnumWindowsProc cb, IntPtr lParam);
+        delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+        [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hWnd);
+        [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+        [DllImport("user32.dll")] static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT rect, int size);
+        [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
 
         const int WH_MOUSE_LL = 14;
+        const int WS_CAPTION = 0x00C00000;
+        const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+        const int DWMWA_CLOAKED = 14;
         const int WM_MOUSEMOVE = 0x0200;
         const int WM_LBUTTONDOWN = 0x0201;
         const int WM_LBUTTONUP = 0x0202;
@@ -168,6 +182,14 @@ namespace DesktopSnow
         Canvas _grinch;
         RotateTransform _grinchRot;
         Canvas _grinchLoot;
+        double _grinchIdleTimer = 20.0;
+        Window _roofWindow;
+        Canvas _roofCanvas;
+        IntPtr _roofHwnd = IntPtr.Zero;
+        EnumWindowsProc _enumProc;
+        readonly List<IntPtr> _enumList = new List<IntPtr>();
+        readonly List<RECT> _enumRects = new List<RECT>();
+        readonly List<Roof> _roofs = new List<Roof>();
         bool _grinchActive;
         bool _grinchDead;
         bool _grinchPending;
@@ -188,6 +210,8 @@ namespace DesktopSnow
             public bool Popped;
             public bool Held;
             public bool Flung;
+            public IntPtr RoofHwnd;
+            public Canvas Host;
             public double X;
             public double Y;
             public double Vx;
@@ -198,6 +222,17 @@ namespace DesktopSnow
             public double RotTarget;
             public RotateTransform Rtf;
             public Canvas Shape;
+        }
+
+        class Roof
+        {
+            public IntPtr Hwnd;
+            public double L;
+            public double T;
+            public double R;
+            public double B;
+            public double[] Depths;
+            public Polygon Poly;
         }
 
         class Confetto
@@ -251,6 +286,7 @@ namespace DesktopSnow
                 Log("program start");
                 ApplyExtendedStyles();
                 ApplyDesktopOnlyMode();
+                CreateRoofWindow();
                 InstallClickHook();
                 SetupTray();
                 EnsureAutostart();
@@ -850,6 +886,8 @@ namespace DesktopSnow
 
             _driftTick++;
             if (_driftTick % 6 == 0) UpdateDriftShape();
+            if (_driftTick % 10 == 0) RefreshRoofs();
+            if (_roofHwnd != IntPtr.Zero && _driftTick % 300 == 0) ApplyRoofStyles(_roofHwnd);
 
             if (_mode == SnowMode.DesktopOnly && _driftTick % 300 == 0 && !_attachedBehindIcons)
             {
@@ -860,13 +898,32 @@ namespace DesktopSnow
             for (int i = _flakes.Count - 1; i >= 0; i--)
             {
                 Flake f = _flakes[i];
+                double oldY = f.Y;
                 f.Phase += dt * f.SwaySpeed;
                 f.Y += f.Speed * dt;
                 f.X = f.BaseX + Math.Sin(f.Phase) * f.SwayAmp + _wind;
 
-                if (f.Y >= _groundY - _depths[DriftIndexFor(f.X)])
+                bool roofLanded = false;
+                for (int ri = 0; ri < _roofs.Count; ri++)
+                {
+                    Roof r = _roofs[ri];
+                    if (r.Depths == null) continue;
+                    if (f.X >= r.L && f.X <= r.R && oldY <= r.T && f.Y >= r.T)
+                    {
+                        DepositRoof(r, f.X, f.R * 5.0);
+                        roofLanded = true;
+                        break;
+                    }
+                }
+
+                if (!roofLanded && f.Y >= _groundY - _depths[DriftIndexFor(f.X)])
                 {
                     DepositSnow(f.X, f.R * 5.0);
+                    roofLanded = true;
+                }
+
+                if (roofLanded)
+                {
                     f.BaseX = _rng.NextDouble() * (width + 80);
                     f.Y = -10 - _rng.NextDouble() * 40;
                     f.X = f.BaseX;
@@ -984,6 +1041,7 @@ namespace DesktopSnow
                 }
                 else if (!d.Stuck)
                 {
+                    d.PrevY = d.Y;
                     d.Vy += 500.0 * dt;
                     d.X += d.Vx * dt;
                     d.Y += d.Vy * dt;
@@ -1010,7 +1068,7 @@ namespace DesktopSnow
                         double tcy2 = tt + 80.0 * 1.5 / 2.0;
                         if (Math.Abs(tcx - tcx2) < 140.0 && Math.Abs(tcy - tcy2) < 70.0)
                         {
-                            _canvas.Children.Remove(d.Shape);
+                            RemoveShape(d.Shape);
                             _drops.RemoveAt(i);
                             KnockDownTrain(tcx2, tcy2);
                             continue;
@@ -1019,12 +1077,23 @@ namespace DesktopSnow
 
                     if (d.Flung && (d.X < -400.0 || d.X > W() + 400.0 || d.Y < -900.0))
                     {
-                        _canvas.Children.Remove(d.Shape);
+                        RemoveShape(d.Shape);
                         _drops.RemoveAt(i);
                         continue;
                     }
 
-                    if (d.Y + h >= landY)
+                    bool landedOnRoof = false;
+                    if (d.RoofHwnd == IntPtr.Zero)
+                    {
+                        Roof hitRoof = FindLandingRoof(d, h);
+                        if (hitRoof != null)
+                        {
+                            LandDropOnRoof(d, hitRoof, h);
+                            landedOnRoof = true;
+                        }
+                    }
+
+                    if (!landedOnRoof && d.Y + h >= landY)
                     {
                         bool wasFlung = d.Flung;
                         d.Stuck = true;
@@ -1034,9 +1103,45 @@ namespace DesktopSnow
                         if (d.IsTree && !wasFlung) d.Rot = d.RotTarget;
                         d.RotSpeed = 0.0;
                         if (d.Rtf != null) d.Rtf.Angle = d.Rot;
+                        if (d.Host != _canvas)
+                        {
+                            Canvas prevHost = d.Shape.Parent as Canvas;
+                            if (prevHost != null) prevHost.Children.Remove(d.Shape);
+                            _canvas.Children.Add(d.Shape);
+                            d.Host = _canvas;
+                        }
                         System.Windows.Controls.Panel.SetZIndex(d.Shape, 40);
                         SnowSplash(d.X + d.Shape.Width / 2.0, landY, 14);
                         DepositSnow(d.X, 5.0);
+                    }
+                }
+                else if (d.RoofHwnd != IntPtr.Zero)
+                {
+                    Roof rr = RoofByHwnd(d.RoofHwnd);
+                    if (rr == null)
+                    {
+                        d.RoofHwnd = IntPtr.Zero;
+                        d.Stuck = false;
+                        if (d.IsTree) d.RotTarget = d.Rot;
+                        d.Host = _canvas;
+                        Canvas prevHost = d.Shape.Parent as Canvas;
+                        if (prevHost != null && prevHost != _canvas)
+                        {
+                            prevHost.Children.Remove(d.Shape);
+                            _canvas.Children.Add(d.Shape);
+                        }
+                        System.Windows.Controls.Panel.SetZIndex(d.Shape, 70);
+                    }
+                    else
+                    {
+                        d.Sink += (d.IsTree ? 0.35 : 0.6) * dt;
+                        d.Y = rr.T - h + d.Sink;
+                        if (d.Sink >= h)
+                        {
+                            RemoveShape(d.Shape);
+                            _drops.RemoveAt(i);
+                            continue;
+                        }
                     }
                 }
                 else
@@ -1046,7 +1151,7 @@ namespace DesktopSnow
                     d.Y = landY - h + d.Sink;
                     if (d.Sink >= h)
                     {
-                        _canvas.Children.Remove(d.Shape);
+                        RemoveShape(d.Shape);
                         _drops.RemoveAt(i);
                         continue;
                     }
@@ -1245,6 +1350,7 @@ namespace DesktopSnow
             d.IsTree = tree;
             d.X = x;
             d.Y = y;
+            d.PrevY = y;
             d.Vx = vx;
             d.Vy = vy;
             if (tree)
@@ -1262,6 +1368,7 @@ namespace DesktopSnow
             d.Shape = tree ? BuildTree() : BuildGift();
             d.Shape.RenderTransformOrigin = new Point(0.5, 0.5);
             d.Shape.RenderTransform = d.Rtf;
+            d.Host = _canvas;
             Canvas.SetLeft(d.Shape, x);
             Canvas.SetTop(d.Shape, y);
             System.Windows.Controls.Panel.SetZIndex(d.Shape, 70);
@@ -1319,6 +1426,359 @@ namespace DesktopSnow
             tree.Children.Add(cap);
 
             return tree;
+        }
+
+        void RemoveShape(FrameworkElement el)
+        {
+            Canvas parent = el.Parent as Canvas;
+            if (parent != null) parent.Children.Remove(el);
+        }
+
+        void CreateRoofWindow()
+        {
+            try
+            {
+                _enumProc = RoofEnumCallback;
+                _roofWindow = new Window();
+                _roofWindow.WindowStyle = WindowStyle.None;
+                _roofWindow.ResizeMode = ResizeMode.NoResize;
+                _roofWindow.ShowInTaskbar = false;
+                _roofWindow.ShowActivated = false;
+                _roofWindow.AllowsTransparency = true;
+                _roofWindow.Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+                _roofWindow.Left = SystemParameters.VirtualScreenLeft;
+                _roofWindow.Top = SystemParameters.VirtualScreenTop;
+                _roofWindow.Width = SystemParameters.VirtualScreenWidth;
+                _roofWindow.Height = SystemParameters.VirtualScreenHeight;
+                _roofWindow.Topmost = true;
+                _roofCanvas = new Canvas();
+                _roofWindow.Content = _roofCanvas;
+                _roofWindow.Loaded += delegate
+                {
+                    _roofHwnd = new WindowInteropHelper(_roofWindow).Handle;
+                    ApplyRoofStyles(_roofHwnd);
+                    Log("roof window ready");
+                };
+                _roofWindow.Show();
+            }
+            catch (Exception ex)
+            {
+                Log("roof window error: " + ex.Message);
+            }
+        }
+
+        void ApplyRoofStyles(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero) return;
+            int ex = GetWindowLong(hwnd, GWL_EXSTYLE);
+            ex |= WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+            SetWindowLong(hwnd, GWL_EXSTYLE, ex);
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        }
+
+        bool RoofEnumCallback(IntPtr hWnd, IntPtr lParam)
+        {
+            try
+            {
+                if (hWnd == _hwnd || hWnd == _roofHwnd) return true;
+                if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
+                int style = GetWindowLong(hWnd, GWL_STYLE);
+                if ((style & WS_CAPTION) != WS_CAPTION) return true;
+                int ex = GetWindowLong(hWnd, GWL_EXSTYLE);
+                if ((ex & WS_EX_TOOLWINDOW) != 0) return true;
+                int cloaked;
+                if (DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, out cloaked, 4) == 0 && cloaked != 0) return true;
+                RECT e;
+                if (DwmGetWindowAttribute(hWnd, DWMWA_EXTENDED_FRAME_BOUNDS, out e, Marshal.SizeOf(typeof(RECT))) != 0)
+                {
+                    if (!GetWindowRect(hWnd, out e)) return true;
+                }
+                double w = e.Right - e.Left;
+                double hh = e.Bottom - e.Top;
+                if (w < 100 || hh < 80) return true;
+                if (w >= W() - 40 && hh >= H() - 100) return true;
+                _enumList.Add(hWnd);
+                _enumRects.Add(e);
+            }
+            catch (Exception) { }
+            return true;
+        }
+
+        void RefreshRoofs()
+        {
+            if (_roofCanvas == null || _enumProc == null) return;
+            _enumList.Clear();
+            _enumRects.Clear();
+            EnumWindows(_enumProc, IntPtr.Zero);
+
+            for (int i = _roofs.Count - 1; i >= 0; i--)
+            {
+                Roof r = _roofs[i];
+                bool found = false;
+                for (int k = 0; k < _enumList.Count; k++)
+                {
+                    if (_enumList[k] != r.Hwnd) continue;
+                    found = true;
+                    RECT e = _enumRects[k];
+                    double nl = e.Left - SystemParameters.VirtualScreenLeft;
+                    double nt = e.Top - SystemParameters.VirtualScreenTop;
+                    double wpx = e.Right - e.Left;
+                    if (Math.Abs(nl - r.L) > 6.0 || Math.Abs(nt - r.T) > 6.0)
+                    {
+                        ReleaseRoofSnow(r);
+                        MoveRoofDropsOff(r);
+                        r.L = nl;
+                        r.T = nt;
+                        r.R = nl + wpx;
+                        r.B = nt + (e.Bottom - e.Top);
+                        r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
+                    }
+                    else
+                    {
+                        r.R = r.L + wpx;
+                        r.B = r.T + (e.Bottom - e.Top);
+                        if (r.Depths == null)
+                            r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
+                    }
+                    break;
+                }
+                if (!found)
+                {
+                    ReleaseRoofSnow(r);
+                    MoveRoofDropsOff(r);
+                    if (r.Poly != null) _roofCanvas.Children.Remove(r.Poly);
+                    _roofs.RemoveAt(i);
+                }
+            }
+
+            for (int k = 0; k < _enumList.Count; k++)
+            {
+                IntPtr h = _enumList[k];
+                bool known = false;
+                for (int i = 0; i < _roofs.Count; i++)
+                {
+                    if (_roofs[i].Hwnd == h) { known = true; break; }
+                }
+                if (!known)
+                {
+                    RECT e = _enumRects[k];
+                    Roof r = new Roof();
+                    r.Hwnd = h;
+                    r.L = e.Left - SystemParameters.VirtualScreenLeft;
+                    r.T = e.Top - SystemParameters.VirtualScreenTop;
+                    r.R = e.Right - SystemParameters.VirtualScreenLeft;
+                    r.B = e.Bottom - SystemParameters.VirtualScreenTop;
+                    r.Depths = new double[Math.Max(2, (int)((r.R - r.L) / _driftSegment) + 2)];
+                    _roofs.Add(r);
+                }
+            }
+
+            RoofMeltAndSmooth();
+            UpdateRoofShapes();
+        }
+
+        void ReleaseRoofSnow(Roof roof)
+        {
+            if (roof.Depths == null || _roofCanvas == null) return;
+            int spawned = 0;
+            for (int i = 0; i < roof.Depths.Length && spawned < 40; i++)
+            {
+                if (roof.Depths[i] < 2.0) continue;
+                int n = 1 + (int)(roof.Depths[i] / 6.0);
+                for (int k = 0; k < n && spawned < 40; k++)
+                {
+                    Confetto c = new Confetto();
+                    c.X = roof.L + i * _driftSegment + _rng.NextDouble() * _driftSegment;
+                    c.Y = roof.T - roof.Depths[i] * 0.5;
+                    c.Vx = -60.0 + _rng.NextDouble() * 120.0;
+                    c.Vy = 20.0 + _rng.NextDouble() * 40.0;
+                    c.Life = 0.5 + _rng.NextDouble() * 0.5;
+                    Ellipse puff = new Ellipse
+                    {
+                        Width = 2.0 + _rng.NextDouble() * 2.5,
+                        Height = 2.0 + _rng.NextDouble() * 2.5,
+                        Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
+                    };
+                    c.Shape = puff;
+                    System.Windows.Controls.Panel.SetZIndex(puff, 90);
+                    Canvas.SetLeft(puff, c.X);
+                    Canvas.SetTop(puff, c.Y);
+                    _confetti.Add(c);
+                    _roofCanvas.Children.Add(puff);
+                    spawned++;
+                }
+                roof.Depths[i] = 0.0;
+            }
+        }
+
+        void RoofPuff(double x, double y, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                Confetto c = new Confetto();
+                double side = (_rng.NextDouble() < 0.5) ? -1.0 : 1.0;
+                c.X = x + side * _rng.NextDouble() * 10.0;
+                c.Y = y - 2.0 - _rng.NextDouble() * 6.0;
+                c.Vx = side * (40.0 + _rng.NextDouble() * 110.0);
+                c.Vy = -40.0 - _rng.NextDouble() * 80.0;
+                c.Life = 0.5 + _rng.NextDouble() * 0.4;
+                Ellipse puff = new Ellipse
+                {
+                    Width = 2.5 + _rng.NextDouble() * 2.5,
+                    Height = 2.5 + _rng.NextDouble() * 2.5,
+                    Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
+                };
+                c.Shape = puff;
+                System.Windows.Controls.Panel.SetZIndex(puff, 80);
+                Canvas.SetLeft(puff, c.X);
+                Canvas.SetTop(puff, c.Y);
+                _confetti.Add(c);
+                _roofCanvas.Children.Add(puff);
+            }
+        }
+
+        void MoveRoofDropsOff(Roof roof)
+        {
+            for (int i = 0; i < _drops.Count; i++)
+            {
+                Drop d = _drops[i];
+                if (d.RoofHwnd != roof.Hwnd || d.Held) continue;
+                d.RoofHwnd = IntPtr.Zero;
+                d.Stuck = false;
+                if (d.IsTree) d.RotTarget = d.Rot;
+                d.Host = _canvas;
+                Canvas prev = d.Shape.Parent as Canvas;
+                if (prev != null && prev != _canvas)
+                {
+                    prev.Children.Remove(d.Shape);
+                    _canvas.Children.Add(d.Shape);
+                }
+                System.Windows.Controls.Panel.SetZIndex(d.Shape, 70);
+            }
+        }
+
+        void RoofMeltAndSmooth()
+        {
+            double dt = 0.16;
+            for (int ri = 0; ri < _roofs.Count; ri++)
+            {
+                double[] dep = _roofs[ri].Depths;
+                if (dep == null) continue;
+                for (int i = 0; i < dep.Length; i++)
+                {
+                    double excess = dep[i] - DriftSoftCap;
+                    if (excess > 0.0) dep[i] -= (excess * 0.3) * dt;
+                    if (dep[i] > _maxDrift) dep[i] = _maxDrift;
+                    if (dep[i] < 0) dep[i] = 0;
+                }
+                double[] tmp = new double[dep.Length];
+                for (int i = 0; i < dep.Length; i++) tmp[i] = dep[i];
+                for (int i = 1; i < dep.Length - 1; i++)
+                {
+                    dep[i] = (tmp[i - 1] + 2.0 * tmp[i] + tmp[i + 1]) * 0.25;
+                }
+            }
+        }
+
+        void UpdateRoofShapes()
+        {
+            if (_roofCanvas == null) return;
+            for (int ri = 0; ri < _roofs.Count; ri++)
+            {
+                Roof r = _roofs[ri];
+                if (r.Depths == null) continue;
+                if (r.Poly == null)
+                {
+                    r.Poly = new Polygon();
+                    r.Poly.Fill = new SolidColorBrush(Color.FromRgb(245, 250, 255));
+                    r.Poly.Opacity = 0.95;
+                    System.Windows.Controls.Panel.SetZIndex(r.Poly, 50);
+                    _roofCanvas.Children.Add(r.Poly);
+                }
+                PointCollection pts = new PointCollection();
+                pts.Add(new Point(r.L - 3, r.T + 3));
+                for (int i = 0; i < r.Depths.Length; i++)
+                {
+                    pts.Add(new Point(r.L + i * _driftSegment, r.T - r.Depths[i]));
+                }
+                pts.Add(new Point(r.R + 3, r.T + 3));
+                pts.Add(new Point(r.R + 3, r.T + 5));
+                pts.Add(new Point(r.L - 3, r.T + 5));
+                r.Poly.Points = pts;
+            }
+        }
+
+        void DepositRoof(Roof roof, double x, double amount)
+        {
+            if (roof.Depths == null) return;
+            double share = amount / roof.Depths.Length;
+            for (int i = 0; i < roof.Depths.Length; i++)
+            {
+                roof.Depths[i] += share * 0.7;
+            }
+            int idx = (int)((x - roof.L) / _driftSegment);
+            if (idx < 0) idx = 0;
+            if (idx >= roof.Depths.Length) idx = roof.Depths.Length - 1;
+            for (int d = -2; d <= 2; d++)
+            {
+                int j = idx + d;
+                if (j < 0 || j >= roof.Depths.Length) continue;
+                roof.Depths[j] += amount * 0.3 / (1 + d * d);
+            }
+        }
+
+        Roof RoofByHwnd(IntPtr h)
+        {
+            for (int i = 0; i < _roofs.Count; i++)
+            {
+                if (_roofs[i].Hwnd == h) return _roofs[i];
+            }
+            return null;
+        }
+
+        Roof FindLandingRoof(Drop d, double h)
+        {
+            if (_roofCanvas == null) return null;
+            double cx = d.X + d.Shape.Width / 2.0;
+            double prevBottom = d.PrevY + h;
+            double bottom = d.Y + h;
+            for (int i = 0; i < _roofs.Count; i++)
+            {
+                Roof r = _roofs[i];
+                if (r.Depths == null) continue;
+                if (cx >= r.L && cx <= r.R && prevBottom <= r.T + 4.0 && bottom >= r.T - r.Depths[Math.Max(0, Math.Min(r.Depths.Length - 1, (int)((cx - r.L) / _driftSegment)))] )
+                {
+                    return r;
+                }
+            }
+            return null;
+        }
+
+        void LandDropOnRoof(Drop d, Roof roof, double h)
+        {
+            d.Stuck = true;
+            d.Flung = false;
+            d.RotSpeed = 0.0;
+            d.RoofHwnd = roof.Hwnd;
+            d.Sink = d.IsTree ? 6.0 : 4.0;
+            d.Y = roof.T - h + d.Sink;
+            d.Host = _roofCanvas;
+            Canvas prev = d.Shape.Parent as Canvas;
+            if (prev != null && prev != _roofCanvas) prev.Children.Remove(d.Shape);
+            _roofCanvas.Children.Add(d.Shape);
+            System.Windows.Controls.Panel.SetZIndex(d.Shape, 45);
+            RoofPuff(d.X + d.Shape.Width / 2.0, roof.T, 8);
+        }
+
+        bool HasGroundGift()
+        {
+            for (int i = 0; i < _drops.Count; i++)
+            {
+                Drop d = _drops[i];
+                if (!d.IsTree && d.Stuck && !d.Popped && d.RoofHwnd == IntPtr.Zero) return true;
+            }
+            return false;
         }
 
         void SnowSplash(double x, double y, int count)
@@ -1442,6 +1902,15 @@ namespace DesktopSnow
                     SpawnGrinch();
                 }
             }
+            _grinchIdleTimer -= dt;
+            if (_grinchIdleTimer <= 0.0)
+            {
+                _grinchIdleTimer = 18.0 + _rng.NextDouble() * 22.0;
+                if (!_grinchActive && !_grinchPending && HasGroundGift() && _rng.NextDouble() < 0.55)
+                {
+                    SpawnGrinch();
+                }
+            }
             if (!_grinchActive || _grinch == null) return;
 
             double w = 64.0, h = 72.0;
@@ -1485,7 +1954,7 @@ namespace DesktopSnow
                 for (int i = 0; i < _drops.Count; i++)
                 {
                     Drop d = _drops[i];
-                    if (d.IsTree || d.Popped || d.Held || !d.Stuck) continue;
+                    if (d.IsTree || d.Popped || d.Held || !d.Stuck || d.RoofHwnd != IntPtr.Zero) continue;
                     double dcx = d.X + d.Shape.Width / 2.0;
                     if (Math.Abs(dcx - handX) < 30.0)
                     {
@@ -1517,7 +1986,7 @@ namespace DesktopSnow
                 c.Life -= dt;
                 if (c.Life <= 0.0 || c.Y > H() + 10)
                 {
-                    _canvas.Children.Remove(c.Shape);
+                    RemoveShape(c.Shape);
                     _confetti.RemoveAt(i);
                     continue;
                 }
@@ -1536,7 +2005,7 @@ namespace DesktopSnow
             d.Popped = true;
             double cx = Canvas.GetLeft(d.Shape) + d.Shape.Width / 2.0;
             double cy = Canvas.GetTop(d.Shape) + d.Shape.Height / 2.0;
-            _canvas.Children.Remove(d.Shape);
+            RemoveShape(d.Shape);
             ConfettiBurst(cx, cy, 26);
         }
 
