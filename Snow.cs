@@ -49,8 +49,8 @@ namespace DesktopSnow
         const uint SWP_NOACTIVATE = 0x0010;
         const uint SWP_SHOWWINDOW = 0x0040;
         const uint SWP_FRAMECHANGED = 0x0020;
-        const IntPtr HWND_BOTTOM = (IntPtr)1;
-        const IntPtr HWND_TOPMOST = (IntPtr)-1;
+        static readonly IntPtr HWND_BOTTOM = new IntPtr(1);
+        static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
