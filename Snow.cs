@@ -82,6 +82,11 @@ namespace DesktopSnow
         readonly Random _rng = new Random();
         int _targetCount = 180;
         bool _topmostMode;
+        Polygon _drift;
+        double[] _depths;
+        int _driftSegment = 16;
+        int _driftTick = 0;
+        double _maxDrift = 140;
         IntPtr _hwnd = IntPtr.Zero;
         IntPtr _parentBefore = IntPtr.Zero;
 
@@ -179,7 +184,12 @@ namespace DesktopSnow
 
                 if (workerw == IntPtr.Zero)
                 {
-                    EnableTopmostFallback("WorkerW not found");
+                    SetParent(_hwnd, progman);
+                    SetWindowPos(_hwnd, IntPtr.Zero,
+                        (int)SystemParameters.VirtualScreenLeft, (int)SystemParameters.VirtualScreenTop,
+                        (int)SystemParameters.VirtualScreenWidth, (int)SystemParameters.VirtualScreenHeight,
+                        SWP_NOACTIVATE | SWP_SHOWWINDOW);
+                    Log("parented to Progman directly (no WorkerW behind icons)");
                     return;
                 }
 
@@ -333,6 +343,7 @@ namespace DesktopSnow
 
         void StartAnimation()
         {
+            InitDrift();
             AddFlakes(_targetCount);
             _clock = Stopwatch.StartNew();
             _timer = new DispatcherTimer(DispatcherPriority.Render);
@@ -344,6 +355,52 @@ namespace DesktopSnow
         void AddFlakes(int count)
         {
             for (int i = 0; i < count; i++) AddFlake(true);
+        }
+
+        void InitDrift()
+        {
+            int segments = (int)(W() / _driftSegment) + 2;
+            _depths = new double[segments];
+            _maxDrift = Math.Min(150, H() * 0.18);
+
+            _drift = new Polygon();
+            _drift.Fill = new LinearGradientBrush(
+                Color.FromRgb(245, 250, 255), Color.FromRgb(225, 235, 250), 90.0);
+            _drift.Opacity = 0.95;
+            _canvas.Children.Insert(0, _drift);
+            UpdateDriftShape();
+        }
+
+        int DriftIndexFor(double x)
+        {
+            int idx = (int)(x / _driftSegment);
+            if (idx < 0) idx = 0;
+            if (idx >= _depths.Length) idx = _depths.Length - 1;
+            return idx;
+        }
+
+        void DepositSnow(double x, double amount)
+        {
+            int idx = DriftIndexFor(x);
+            for (int d = -2; d <= 2; d++)
+            {
+                int j = idx + d;
+                if (j < 0 || j >= _depths.Length) continue;
+                _depths[j] += amount / (1 + Math.Abs(d) * Math.Abs(d));
+            }
+        }
+
+        void UpdateDriftShape()
+        {
+            double height = H();
+            PointCollection pts = new PointCollection();
+            pts.Add(new Point(0, height));
+            for (int i = 0; i < _depths.Length; i++)
+            {
+                pts.Add(new Point(i * _driftSegment, height - _depths[i]));
+            }
+            pts.Add(new Point(W(), height));
+            _drift.Points = pts;
         }
 
         void AddFlake(bool randomY)
@@ -392,6 +449,16 @@ namespace DesktopSnow
             double width = SystemParameters.VirtualScreenWidth;
             double height = SystemParameters.VirtualScreenHeight;
 
+            for (int i = 0; i < _depths.Length; i++)
+            {
+                _depths[i] -= 0.1 * dt;
+                if (_depths[i] > _maxDrift) _depths[i] = _maxDrift;
+                if (_depths[i] < 0) _depths[i] = 0;
+            }
+
+            _driftTick++;
+            if (_driftTick % 6 == 0) UpdateDriftShape();
+
             for (int i = _flakes.Count - 1; i >= 0; i--)
             {
                 Flake f = _flakes[i];
@@ -399,13 +466,19 @@ namespace DesktopSnow
                 f.Y += f.Speed * dt;
                 f.X = f.BaseX + Math.Sin(f.Phase) * f.SwayAmp + _wind;
 
-                if (f.X < -20) f.X += width + 40;
-                if (f.X > width + 20) f.X -= width + 40;
-
                 if (f.Y > height + 10)
                 {
                     f.Y = -10;
                     f.BaseX = _rng.NextDouble() * (width + 80);
+                }
+
+                double landY = height - _depths[DriftIndexFor(f.X)];
+                if (f.Y >= landY)
+                {
+                    DepositSnow(f.X, f.R * 2.5);
+                    f.BaseX = _rng.NextDouble() * (width + 80);
+                    f.Y = -10 - _rng.NextDouble() * 40;
+                    f.X = f.BaseX;
                 }
             }
 
