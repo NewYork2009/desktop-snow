@@ -175,7 +175,7 @@ namespace DesktopSnow
             public double Vx;
             public double Vy;
             public double Life;
-            public Rectangle Shape;
+            public FrameworkElement Shape;
         }
 
         class Flake
@@ -526,7 +526,7 @@ namespace DesktopSnow
                 Drop d = _drops[i];
                 if (d.Popped || d.IsTree || !d.Stuck) continue;
                 double l = Canvas.GetLeft(d.Shape), t = Canvas.GetTop(d.Shape);
-                if (mx >= l - 6 && mx <= l + 30 && my >= t - 6 && my <= t + 26)
+                if (mx >= l - 8 && mx <= l + d.Shape.Width + 8 && my >= t - 8 && my <= t + d.Shape.Height + 8)
                 {
                     return d;
                 }
@@ -765,7 +765,7 @@ namespace DesktopSnow
                 }
 
                 double landY = _groundY - _depths[DriftIndexFor(d.X)];
-                double h = d.IsTree ? 44.0 : 20.0;
+                double h = d.IsTree ? 60.0 : 28.0;
 
                 if (!d.Stuck)
                 {
@@ -777,9 +777,11 @@ namespace DesktopSnow
                     if (d.Y + h >= landY)
                     {
                         d.Stuck = true;
-                        d.Sink = 0.0;
-                        d.Y = landY - h;
+                        d.Sink = d.IsTree ? 8.0 : 6.0;
+                        d.Y = landY - h + d.Sink;
                         System.Windows.Controls.Panel.SetZIndex(d.Shape, 40);
+                        SnowSplash(d.X + d.Shape.Width / 2.0, landY);
+                        DepositSnow(d.X, 5.0);
                     }
                 }
                 else
@@ -971,14 +973,14 @@ namespace DesktopSnow
             };
 
             Canvas gift = new Canvas();
-            gift.Width = 24;
-            gift.Height = 20;
+            gift.Width = 34;
+            gift.Height = 28;
 
             Color cc = boxColors[_rng.Next(0, boxColors.Length)];
-            gift.Children.Add(ShapeAt(new Rectangle { Width = 20, Height = 16, RadiusX = 2, RadiusY = 2, Fill = new SolidColorBrush(cc) }, 2, 3));
-            gift.Children.Add(ShapeAt(new Rectangle { Width = 4, Height = 16, Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200)) }, 10, 3));
-            gift.Children.Add(ShapeAt(new Rectangle { Width = 20, Height = 4, Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200)) }, 2, 9));
-            gift.Children.Add(ShapeAt(new Ellipse { Width = 6, Height = 6, Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200)) }, 9, 0.5));
+            gift.Children.Add(ShapeAt(new Rectangle { Width = 28, Height = 22, RadiusX = 2, RadiusY = 2, Fill = new SolidColorBrush(cc) }, 3, 5));
+            gift.Children.Add(ShapeAt(new Rectangle { Width = 5, Height = 22, Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200)) }, 14.5, 5));
+            gift.Children.Add(ShapeAt(new Rectangle { Width = 28, Height = 5, Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200)) }, 3, 13));
+            gift.Children.Add(ShapeAt(new Ellipse { Width = 7, Height = 7, Fill = new SolidColorBrush(Color.FromRgb(250, 240, 200)) }, 13.5, 1));
 
             return gift;
         }
@@ -986,29 +988,57 @@ namespace DesktopSnow
         Canvas BuildTree()
         {
             Canvas tree = new Canvas();
-            tree.Width = 34;
-            tree.Height = 44;
+            tree.Width = 48;
+            tree.Height = 60;
             Brush green = new SolidColorBrush(Color.FromRgb(30, 110, 50));
             Brush snowCap = new SolidColorBrush(Color.FromRgb(240, 248, 255));
 
-            tree.Children.Add(ShapeAt(new Rectangle { Width = 6, Height = 9, Fill = new SolidColorBrush(Color.FromRgb(101, 67, 33)) }, 14, 35));
+            tree.Children.Add(ShapeAt(new Rectangle { Width = 8, Height = 12, Fill = new SolidColorBrush(Color.FromRgb(101, 67, 33)) }, 20, 48));
 
             Polygon t1 = new Polygon();
-            t1.Points = new PointCollection(new Point[] { new Point(17, 14), new Point(5, 35), new Point(29, 35) });
+            t1.Points = new PointCollection(new Point[] { new Point(24, 18), new Point(6, 48), new Point(42, 48) });
             t1.Fill = green;
             tree.Children.Add(t1);
 
             Polygon t2 = new Polygon();
-            t2.Points = new PointCollection(new Point[] { new Point(17, 2), new Point(7, 22), new Point(27, 22) });
+            t2.Points = new PointCollection(new Point[] { new Point(24, 2), new Point(9, 30), new Point(39, 30) });
             t2.Fill = green;
             tree.Children.Add(t2);
 
             Polygon cap = new Polygon();
-            cap.Points = new PointCollection(new Point[] { new Point(17, 2), new Point(12, 11), new Point(22, 11) });
+            cap.Points = new PointCollection(new Point[] { new Point(24, 2), new Point(17, 14), new Point(31, 14) });
             cap.Fill = snowCap;
             tree.Children.Add(cap);
 
             return tree;
+        }
+
+        void SnowSplash(double x, double y)
+        {
+            for (int i = 0; i < 12; i++)
+            {
+                Confetto c = new Confetto();
+                double side = (_rng.NextDouble() < 0.5) ? -1.0 : 1.0;
+                double speed = 40.0 + _rng.NextDouble() * 130.0;
+                c.X = x + side * _rng.NextDouble() * 8.0;
+                c.Y = y - _rng.NextDouble() * 4.0;
+                c.Vx = side * speed;
+                c.Vy = -20.0 + _rng.NextDouble() * 100.0;
+                c.Life = 0.4 + _rng.NextDouble() * 0.4;
+                Ellipse puff = new Ellipse
+                {
+                    Width = 2.0 + _rng.NextDouble() * 2.5,
+                    Height = 2.0 + _rng.NextDouble() * 2.5,
+                    Fill = new SolidColorBrush(Color.FromRgb(245, 250, 255))
+                };
+                puff.Opacity = 0.9;
+                c.Shape = puff;
+                System.Windows.Controls.Panel.SetZIndex(puff, 80);
+                Canvas.SetLeft(c.Shape, c.X);
+                Canvas.SetTop(c.Shape, c.Y);
+                _confetti.Add(c);
+                _canvas.Children.Add(c.Shape);
+            }
         }
 
         void UpdateConfetti(double dt)
@@ -1036,8 +1066,8 @@ namespace DesktopSnow
         {
             if (d.Popped) return;
             d.Popped = true;
-            double cx = Canvas.GetLeft(d.Shape) + 12;
-            double cy = Canvas.GetTop(d.Shape) + 10;
+            double cx = Canvas.GetLeft(d.Shape) + d.Shape.Width / 2.0;
+            double cy = Canvas.GetTop(d.Shape) + d.Shape.Height / 2.0;
             _canvas.Children.Remove(d.Shape);
 
             Color[] palette = new Color[]
@@ -1059,8 +1089,8 @@ namespace DesktopSnow
                 c.Life = 1.0 + _rng.NextDouble() * 0.8;
                 c.Shape = new Rectangle
                 {
-                    Width = 5,
-                    Height = 4,
+                    Width = 6,
+                    Height = 5,
                     Fill = new SolidColorBrush(palette[_rng.Next(0, palette.Length)])
                 };
                 System.Windows.Controls.Panel.SetZIndex(c.Shape, 80);
