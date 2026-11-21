@@ -88,7 +88,8 @@ namespace DesktopSnow
         int _driftTick = 0;
         double _maxDrift = 35;
         double _groundY;
-        const double DriftSoftCap = 20.0;
+        const double DriftSoftCap = 15.0;
+        const uint SWP_HWND_BOTTOM = 0x0001;
         DispatcherTimer _retryTimer;
         bool _userWantsTopmost;
         IntPtr _hwnd = IntPtr.Zero;
@@ -213,13 +214,16 @@ namespace DesktopSnow
 
         void EnableTopmostFallback(string reason)
         {
-            Log("fallback to topmost: " + reason);
+            Log("fallback (window stack bottom): " + reason);
             if (_userWantsTopmost)
             {
                 return;
             }
-            _topmostMode = true;
-            Topmost = true;
+            _topmostMode = false;
+            Topmost = false;
+            SetParent(_hwnd, IntPtr.Zero);
+            SetWindowPos(_hwnd, (IntPtr)SWP_HWND_BOTTOM, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             SyncTrayCheckState();
             StartWallpaperRetry();
         }
@@ -513,8 +517,10 @@ namespace DesktopSnow
             for (int i = 0; i < _depths.Length; i++)
             {
                 double excess = _depths[i] - DriftSoftCap;
-                double melt = (excess > 0.0) ? 0.02 + excess * 0.25 : 0.02;
-                _depths[i] -= melt * dt;
+                if (excess > 0.0)
+                {
+                    _depths[i] -= (excess * 0.3) * dt;
+                }
                 if (_depths[i] > _maxDrift) _depths[i] = _maxDrift;
                 if (_depths[i] < 0) _depths[i] = 0;
             }
@@ -532,7 +538,7 @@ namespace DesktopSnow
                 double landY = _groundY - _depths[DriftIndexFor(f.X)];
                 if (f.Y >= landY)
                 {
-                    DepositSnow(f.X, f.R * 2.5);
+                    DepositSnow(f.X, f.R * 5.0);
                     f.BaseX = _rng.NextDouble() * (width + 80);
                     f.Y = -10 - _rng.NextDouble() * 40;
                     f.X = f.BaseX;
