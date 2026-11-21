@@ -47,7 +47,9 @@ namespace DesktopSnow
         [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
 
         const int WH_MOUSE_LL = 14;
+        const int WM_MOUSEMOVE = 0x0200;
         const int WM_LBUTTONDOWN = 0x0201;
+        const int WM_LBUTTONUP = 0x0202;
 
         [StructLayout(LayoutKind.Sequential)]
         struct POINT { public int X; public int Y; }
@@ -149,6 +151,13 @@ namespace DesktopSnow
         RotateTransform _trainRot;
         readonly List<Drop> _drops = new List<Drop>();
         readonly List<Confetto> _confetti = new List<Confetto>();
+        Drop _grabbed;
+        double _grabLastX;
+        double _grabLastY;
+        uint _grabLastTime;
+        double _flingVx;
+        double _flingVy;
+        int _grabFxCooldown;
         HookProc _hookProc;
         IntPtr _hook = IntPtr.Zero;
 
@@ -157,6 +166,8 @@ namespace DesktopSnow
             public bool IsTree;
             public bool Stuck;
             public bool Popped;
+            public bool Held;
+            public bool Flung;
             public double X;
             public double Y;
             public double Vx;
@@ -505,16 +516,40 @@ namespace DesktopSnow
 
         IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
-            if (nCode >= 0 && wParam.ToInt32() == WM_LBUTTONDOWN)
+            if (nCode >= 0)
             {
+                int msg = wParam.ToInt32();
                 MSLLHOOKSTRUCT info = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(lParam, typeof(MSLLHOOKSTRUCT));
-                double mx = info.pt.X - SystemParameters.VirtualScreenLeft;
-                double my = info.pt.Y - SystemParameters.VirtualScreenTop;
-                Drop hit = FindClickableDrop(mx, my);
-                if (hit != null)
+                if (msg == WM_LBUTTONDOWN)
                 {
-                    Dispatcher.BeginInvoke((Action)delegate { PopDrop(hit); });
-                    return (IntPtr)1;
+                    double mx = info.pt.X - SystemParameters.VirtualScreenLeft;
+                    double my = info.pt.Y - SystemParameters.VirtualScreenTop;
+                    Drop hit = FindClickableDrop(mx, my);
+                    if (hit != null)
+                    {
+                        Dispatcher.BeginInvoke((Action)delegate { PopDrop(hit); });
+                        return (IntPtr)1;
+                    }
+                    if (_grabbed == null)
+                    {
+                        Drop tree = FindGrabbableTree(mx, my);
+                        if (tree != null)
+                        {
+                            Dispatcher.BeginInvoke((Action)delegate { GrabTree(tree, mx, my); });
+                            return (IntPtr)1;
+                        }
+                    }
+                }
+                else if (msg == WM_MOUSEMOVE && _grabbed != null)
+                {
+                    double mx = info.pt.X - SystemParameters.VirtualScreenLeft;
+                    double my = info.pt.Y - SystemParameters.VirtualScreenTop;
+                    uint tstamp = info.time;
+                    Dispatcher.BeginInvoke((Action)delegate { MoveGrabbed(mx, my, tstamp); });
+                }
+                else if (msg == WM_LBUTTONUP && _grabbed != null)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate { ReleaseGrabbed(); });
                 }
             }
             return CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -533,6 +568,119 @@ namespace DesktopSnow
                 }
             }
             return null;
+        }
+
+        Drop FindGrabbableTree(double mx, double my)
+        {
+            for (int i = 0; i < _drops.Count; i++)
+            {
+                Drop d = _drops[i];
+                if (!d.IsTree || d.Popped || d.Held || !d.Stuck) continue;
+                double l = Canvas.GetLeft(d.Shape), t = Canvas.GetTop(d.Shape);
+                if (mx >= l - 8 && mx <= l + d.Shape.Width + 8 && my >= t - 8 && my <= t + d.Shape.Height + 8)
+                {
+                    return d;
+                }
+            }
+            return null;
+        }
+
+        void GrabTree(Drop d, double mx, double my)
+        {
+            _grabbed = d;
+            d.Held = true;
+            d.Flung = false;
+            d.Stuck = true;
+            d.Vx = 0.0;
+            d.Vy = 0.0;
+            d.RotTarget = d.Rot;
+            d.Sink = 0.0;
+            d.RotSpeed = 0.0;
+            System.Windows.Controls.Panel.SetZIndex(d.Shape, 85);
+            SetHeldPosition(d, mx, my);
+            _grabLastX = mx;
+            _grabLastY = my;
+            _grabLastTime = 0;
+            _flingVx = 0.0;
+            _flingVy = 0.0;
+            _grabFxCooldown = 0;
+            SnowSplash(d.X + d.Shape.Width / 2.0, d.Y + d.Shape.Height - 4.0, 10);
+            SnowSplash(d.X + d.Shape.Width / 2.0, d.Y + d.Shape.Height - 4.0, 6);
+            Log("tree grabbed");
+        }
+
+        void SetHeldPosition(Drop d, double mx, double my)
+        {
+            d.X = mx - d.Shape.Width / 2.0;
+            d.Y = my - d.Shape.Height * 0.5;
+        }
+
+        void MoveGrabbed(double mx, double my, uint tstamp)
+        {
+            Drop d = _grabbed;
+            if (d == null || !d.Held) return;
+            double dx = mx - _grabLastX;
+            d.Rot += dx * 0.25;
+            if (d.Rtf != null) d.Rtf.Angle = d.Rot;
+            SetHeldPosition(d, mx, my);
+
+            if (tstamp > _grabLastTime)
+            {
+                double sdt = (tstamp - _grabLastTime) / 1000.0;
+                if (sdt > 0.004 && sdt < 0.4)
+                {
+                    _flingVx = _flingVx * 0.6 + (dx / sdt) * 0.4;
+                    _flingVy = _flingVy * 0.6 + ((my - _grabLastY) / sdt) * 0.4;
+                }
+                _grabLastTime = tstamp;
+            }
+            _grabLastX = mx;
+            _grabLastY = my;
+
+            _grabFxCooldown--;
+            if (_grabFxCooldown <= 0)
+            {
+                double speed = Math.Sqrt(_flingVx * _flingVx + _flingVy * _flingVy);
+                if (speed > 150.0)
+                {
+                    _grabFxCooldown = 4;
+                    SnowSplash(d.X + d.Shape.Width / 2.0, d.Y + d.Shape.Height - 4.0, 4);
+                }
+            }
+        }
+
+        void ReleaseGrabbed()
+        {
+            Drop d = _grabbed;
+            if (d == null) return;
+            _grabbed = null;
+            d.Held = false;
+            d.Stuck = false;
+            d.Flung = true;
+            d.RotTarget = d.Rot;
+            d.RotSpeed = 0.0;
+            double max = 1300.0;
+            d.Vx = Math.Max(-max, Math.Min(max, _flingVx));
+            d.Vy = Math.Max(-max, Math.Min(max, _flingVy * 0.8));
+            System.Windows.Controls.Panel.SetZIndex(d.Shape, 70);
+            Log("tree thrown, v=" + Math.Round(Math.Sqrt(d.Vx * d.Vx + d.Vy * d.Vy)));
+        }
+
+        void KnockDownTrain(double cx, double cy)
+        {
+            _canvas.Children.Remove(_train);
+            _train = null;
+            _trainActive = false;
+            _trainRot = null;
+            ConfettiBurst(cx, cy, 40);
+            SnowSplash(cx, cy, 20);
+            for (int i = 0; i < 4; i++)
+            {
+                SpawnDrop(cx - 60.0 + _rng.NextDouble() * 120.0, cy,
+                    -180.0 + _rng.NextDouble() * 360.0, -60.0 + _rng.NextDouble() * 100.0, false);
+            }
+            DepositSnow(cx, 10.0);
+            Log("santa downed");
         }
 
         void StartAnimation()
@@ -768,32 +916,61 @@ namespace DesktopSnow
                 double landY = _groundY - _depths[DriftIndexFor(d.X)];
                 double h = d.IsTree ? 60.0 : 28.0;
 
-                if (!d.Stuck)
+                if (d.Held)
+                {
+                }
+                else if (!d.Stuck)
                 {
                     d.Vy += 500.0 * dt;
                     d.X += d.Vx * dt;
                     d.Y += d.Vy * dt;
-                    if (d.IsTree)
+                    if (d.IsTree && !d.Flung)
                     {
                         double diff = d.RotTarget - d.Rot;
                         double step = 260.0 * dt;
                         if (Math.Abs(diff) <= step) d.Rot = d.RotTarget;
                         else d.Rot += Math.Sign(diff) * step;
                     }
-                    else
+                    else if (!d.IsTree)
                     {
                         d.Rot += d.RotSpeed * dt;
                     }
                     if (d.Rtf != null) d.Rtf.Angle = d.Rot;
+
+                    if (d.Flung && d.IsTree && _trainActive && _train != null)
+                    {
+                        double tcx = d.X + d.Shape.Width / 2.0;
+                        double tcy = d.Y + d.Shape.Height / 2.0;
+                        double tl = Canvas.GetLeft(_train);
+                        double tt = Canvas.GetTop(_train);
+                        double tcx2 = tl + 170.0 * 1.5 / 2.0;
+                        double tcy2 = tt + 80.0 * 1.5 / 2.0;
+                        if (Math.Abs(tcx - tcx2) < 140.0 && Math.Abs(tcy - tcy2) < 70.0)
+                        {
+                            _canvas.Children.Remove(d.Shape);
+                            _drops.RemoveAt(i);
+                            KnockDownTrain(tcx2, tcy2);
+                            continue;
+                        }
+                    }
+
+                    if (d.Flung && (d.X < -400.0 || d.X > W() + 400.0 || d.Y < -900.0))
+                    {
+                        _canvas.Children.Remove(d.Shape);
+                        _drops.RemoveAt(i);
+                        continue;
+                    }
+
                     if (d.Y + h >= landY)
                     {
                         d.Stuck = true;
+                        d.Flung = false;
                         d.Sink = d.IsTree ? 8.0 : 6.0;
                         d.Y = landY - h + d.Sink;
-                        if (d.IsTree) d.Rot = d.RotTarget;
+                        if (d.IsTree && d.Rot != 0.0 && d.Rot != 180.0 && d.Rot != -180.0) d.Rot = d.RotTarget;
                         if (d.Rtf != null) d.Rtf.Angle = d.Rot;
                         System.Windows.Controls.Panel.SetZIndex(d.Shape, 40);
-                        SnowSplash(d.X + d.Shape.Width / 2.0, landY);
+                        SnowSplash(d.X + d.Shape.Width / 2.0, landY, 14);
                         DepositSnow(d.X, 5.0);
                     }
                 }
@@ -1036,9 +1213,9 @@ namespace DesktopSnow
             return tree;
         }
 
-        void SnowSplash(double x, double y)
+        void SnowSplash(double x, double y, int count)
         {
-            for (int i = 0; i < 16; i++)
+            for (int i = 0; i < count; i++)
             {
                 Confetto c = new Confetto();
                 double side = (_rng.NextDouble() < 0.5) ? -1.0 : 1.0;
@@ -1092,7 +1269,11 @@ namespace DesktopSnow
             double cx = Canvas.GetLeft(d.Shape) + d.Shape.Width / 2.0;
             double cy = Canvas.GetTop(d.Shape) + d.Shape.Height / 2.0;
             _canvas.Children.Remove(d.Shape);
+            ConfettiBurst(cx, cy, 26);
+        }
 
+        void ConfettiBurst(double cx, double cy, int count)
+        {
             Color[] palette = new Color[]
             {
                 Color.FromRgb(230, 40, 40), Color.FromRgb(40, 110, 230),
@@ -1100,7 +1281,7 @@ namespace DesktopSnow
                 Color.FromRgb(240, 120, 40), Color.FromRgb(230, 70, 180)
             };
 
-            for (int i = 0; i < 26; i++)
+            for (int i = 0; i < count; i++)
             {
                 Confetto c = new Confetto();
                 double angle = _rng.NextDouble() * Math.PI * 2.0;
