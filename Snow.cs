@@ -158,13 +158,13 @@ namespace DesktopSnow
                 IntPtr progman = FindWindow("Progman", null);
                 Log("progman: " + progman);
                 if (progman == IntPtr.Zero) { EnableTopmostFallback("Progman not found"); return; }
-                SendMessage(progman, 0x052C, IntPtr.Zero, IntPtr.Zero);
-                System.Threading.Thread.Sleep(200);
-                SendMessage(progman, 0x052C, IntPtr.Zero, IntPtr.Zero);
 
                 IntPtr workerw = IntPtr.Zero;
-                for (int attempt = 0; attempt < 2 && workerw == IntPtr.Zero; attempt++)
+                uint[] wakeParams = new uint[] { 0x0, 0xD };
+                for (int attempt = 0; attempt < wakeParams.Length && workerw == IntPtr.Zero; attempt++)
                 {
+                    SendMessage(progman, 0x052C, new IntPtr((long)wakeParams[attempt]), IntPtr.Zero);
+                    System.Threading.Thread.Sleep(300);
                     EnumWindows(delegate(IntPtr top, IntPtr lp)
                     {
                         IntPtr defview = FindWindowEx(top, IntPtr.Zero, "SHELLDLL_DefView", null);
@@ -174,13 +174,8 @@ namespace DesktopSnow
                         }
                         return true;
                     }, IntPtr.Zero);
-                    if (workerw == IntPtr.Zero)
-                    {
-                        Log("workerw empty, retry " + attempt);
-                        System.Threading.Thread.Sleep(300);
-                    }
+                    Log("variant " + attempt + " -> workerw: " + workerw);
                 }
-                Log("workerw: " + workerw);
 
                 if (workerw == IntPtr.Zero)
                 {
@@ -242,6 +237,7 @@ namespace DesktopSnow
 
         void SyncTrayCheckState()
         {
+            if (_miTopmost == null || _miAutostart == null) return;
             _miTopmost.Checked = _topmostMode;
             _miAutostart.Checked = IsAutostartEnabled();
         }
