@@ -1734,6 +1734,17 @@ namespace DesktopSnow
             {
                 Roof r = _roofs[ri];
                 if (r.Depths == null) continue;
+                double total = 0.0;
+                for (int i = 0; i < r.Depths.Length; i++) total += r.Depths[i];
+                if (total < 0.5)
+                {
+                    if (r.Poly != null && r.Poly.Points.Count > 0)
+                    {
+                        r.Poly.Points = new PointCollection();
+                        r.Poly.Clip = null;
+                    }
+                    continue;
+                }
                 if (r.Poly == null)
                 {
                     r.Poly = new Polygon();
@@ -1743,7 +1754,7 @@ namespace DesktopSnow
                     _roofCanvas.Children.Add(r.Poly);
                 }
                 PointCollection pts = new PointCollection();
-                pts.Add(new Point(r.L - 3, r.T + 3));
+                pts.Add(new Point(r.L - 3, r.T + 1));
                 int n = r.Depths.Length;
                 for (int i = 0; i < n; i++)
                 {
@@ -1751,9 +1762,9 @@ namespace DesktopSnow
                     double taper = t * t * (3.0 - 2.0 * t);
                     pts.Add(new Point(r.L + i * _driftSegment, r.T - r.Depths[i] * taper));
                 }
-                pts.Add(new Point(r.R + 3, r.T + 3));
-                pts.Add(new Point(r.R + 3, r.T + 5));
-                pts.Add(new Point(r.L - 3, r.T + 5));
+                pts.Add(new Point(r.R + 3, r.T + 1));
+                pts.Add(new Point(r.R + 3, r.T + 2));
+                pts.Add(new Point(r.L - 3, r.T + 2));
                 r.Poly.Points = pts;
                 Geometry clip = ComputeRoofClip(r);
                 r.Poly.Clip = clip;
