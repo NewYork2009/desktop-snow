@@ -41,6 +41,9 @@ namespace DesktopSnow
         delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         const int GWL_EXSTYLE = -20;
+        const int GWL_STYLE = -16;
+        const int WS_CHILD = 0x40000000;
+        const int WS_POPUP = unchecked((int)0x80000000);
         const int WS_EX_TRANSPARENT = 0x20;
         const int WS_EX_TOOLWINDOW = 0x80;
         const int WS_EX_NOACTIVATE = 0x08000000;
@@ -96,12 +99,12 @@ namespace DesktopSnow
         SWF.NotifyIcon _tray;
         SWF.MenuItem _miAutostart;
         SWF.MenuItem _miScreensaver;
+        SWF.MenuItem _miIcons;
         readonly Random _rng = new Random();
         int _targetCount = 180;
         SnowMode _mode = SnowMode.DesktopOnly;
         bool _attachedBehindIcons;
         bool _userWantsScreensaver;
-        DispatcherTimer _retryTimer;
         IntPtr _hwnd = IntPtr.Zero;
 
         Polygon _drift;
@@ -179,16 +182,13 @@ namespace DesktopSnow
         }
 
         // ГЛАВНЫЙ РЕЖИМ: снег виден только на рабочем столе, за окнами программ.
-        // Сначала пробуем спрятаться в слой обоев (за иконки); если Windows не даёт —
-        // отправляем окно в самый низ стека окон, что даёт тот же эффект видимости.
+        // Надёжный способ: окно в самый низ стека окон. Прикрепление к слою обоев
+        // доступно вручную через меню (экспериментальный пункт).
         void ApplyDesktopOnlyMode()
         {
             _mode = SnowMode.DesktopOnly;
             Topmost = false;
-            if (!TryAttachBehindIcons())
-            {
-                PlaceAtWindowStackBottom();
-            }
+            PlaceAtWindowStackBottom();
         }
 
         bool TryAttachBehindIcons()
@@ -255,6 +255,11 @@ namespace DesktopSnow
             _attachedBehindIcons = false;
             SetParent(_hwnd, IntPtr.Zero);
             Topmost = false;
+            int style = GetWindowLong(_hwnd, GWL_STYLE);
+            style &= ~WS_CHILD;
+            style |= WS_POPUP;
+            SetWindowLong(_hwnd, GWL_STYLE, style);
+            RepositionToVirtualScreen();
             SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, 0, 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
             Log("placed at bottom of window stack (snow only on desktop)");
@@ -273,9 +278,11 @@ namespace DesktopSnow
         {
             _miAutostart = new SWF.MenuItem("Включён вместе с ПК (автозапуск)", OnClickAutostart);
             _miScreensaver = new SWF.MenuItem("Скринсейвер: снег поверх всех окон", OnClickScreensaver);
+            _miIcons = new SWF.MenuItem("Эксперимент: снег за иконками", OnClickBehindIcons);
 
             SWF.ContextMenu menu = new SWF.ContextMenu();
             menu.MenuItems.Add(_miScreensaver);
+            menu.MenuItems.Add(_miIcons);
             menu.MenuItems.Add(new SWF.MenuItem("Больше снега", delegate { _targetCount += 80; TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Меньше снега", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("-"));
@@ -297,8 +304,9 @@ namespace DesktopSnow
 
         void SyncTrayCheckState()
         {
-            if (_miScreensaver == null || _miAutostart == null) return;
+            if (_miScreensaver == null || _miAutostart == null || _miIcons == null) return;
             _miScreensaver.Checked = (_mode == SnowMode.Screensaver);
+            _miIcons.Checked = _attachedBehindIcons;
             _miAutostart.Checked = IsAutostartEnabled();
         }
 
@@ -327,7 +335,6 @@ namespace DesktopSnow
             {
                 _mode = SnowMode.Screensaver;
                 _userWantsScreensaver = true;
-                StopWallpaperRetry();
                 SetParent(_hwnd, IntPtr.Zero);
                 Topmost = true;
                 SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
@@ -337,43 +344,39 @@ namespace DesktopSnow
             {
                 _userWantsScreensaver = false;
                 ApplyDesktopOnlyMode();
-                if (!_attachedBehindIcons)
-                {
-                    _tray.ShowBalloonTip(5000, "DesktopSnow",
-                        "Снег убран за окна (низ стека). Он же появится за иконками, " +
-                        "когда Windows разрешит — попытки идут каждые 20 секунд.",
-                        SWF.ToolTipIcon.Info);
-                }
             }
             Log("mode -> " + _mode + ", behindIcons: " + _attachedBehindIcons);
             SyncTrayCheckState();
         }
 
-        void StartWallpaperRetry()
+        void OnClickBehindIcons(object sender, EventArgs e)
         {
-            if (_retryTimer != null) return;
-            _retryTimer = new DispatcherTimer();
-            _retryTimer.Interval = TimeSpan.FromSeconds(20);
-            _retryTimer.Tick += delegate
+            if (_mode == SnowMode.Screensaver)
             {
-                if (_mode != SnowMode.DesktopOnly || _attachedBehindIcons)
-                {
-                    StopWallpaperRetry();
-                    return;
-                }
-                Log("retry wallpaper attach");
-                if (TryAttachBehindIcons()) StopWallpaperRetry();
-            };
-            _retryTimer.Start();
-        }
-
-        void StopWallpaperRetry()
-        {
-            if (_retryTimer != null)
-            {
-                _retryTimer.Stop();
-                _retryTimer = null;
+                _userWantsScreensaver = false;
+                _mode = SnowMode.DesktopOnly;
+                Topmost = false;
             }
+
+            if (_attachedBehindIcons)
+            {
+                PlaceAtWindowStackBottom();
+                _tray.ShowBalloonTip(4000, "DesktopSnow",
+                    "Снег возвращён в режим «только рабочий стол».", SWF.ToolTipIcon.Info);
+            }
+            else if (TryAttachBehindIcons())
+            {
+                _tray.ShowBalloonTip(4000, "DesktopSnow",
+                    "Получилось: снег теперь за иконками рабочего стола.", SWF.ToolTipIcon.Info);
+            }
+            else
+            {
+                PlaceAtWindowStackBottom();
+                _tray.ShowBalloonTip(5000, "DesktopSnow",
+                    "Windows не дал спрятать снег за иконки. Оставлен режим «только рабочий стол».",
+                    SWF.ToolTipIcon.Warning);
+            }
+            SyncTrayCheckState();
         }
 
         static bool IsAutostartEnabled()
@@ -425,7 +428,6 @@ namespace DesktopSnow
             _timer.Interval = TimeSpan.FromMilliseconds(16);
             _timer.Tick += Tick;
             _timer.Start();
-            StartWallpaperRetry();
         }
 
         void InitDrift()
@@ -545,6 +547,12 @@ namespace DesktopSnow
 
             _driftTick++;
             if (_driftTick % 6 == 0) UpdateDriftShape();
+
+            if (_mode == SnowMode.DesktopOnly && _driftTick % 300 == 0 && !_attachedBehindIcons)
+            {
+                SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
 
             for (int i = _flakes.Count - 1; i >= 0; i--)
             {
