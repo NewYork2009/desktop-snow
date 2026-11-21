@@ -188,6 +188,7 @@ namespace DesktopSnow
         readonly List<IntPtr> _enumList = new List<IntPtr>();
         readonly List<RECT> _enumRects = new List<RECT>();
         readonly List<Roof> _roofs = new List<Roof>();
+        readonly HashSet<IntPtr> _roofSet = new HashSet<IntPtr>();
         bool _grinchActive;
         bool _grinchDead;
         bool _grinchPending;
@@ -230,6 +231,7 @@ namespace DesktopSnow
             public double T;
             public double R;
             public double B;
+            public int Z;
             public double[] Depths;
             public Polygon Poly;
         }
@@ -885,7 +887,7 @@ namespace DesktopSnow
 
             _driftTick++;
             if (_driftTick % 6 == 0) UpdateDriftShape();
-            if (_driftTick % 10 == 0) RefreshRoofs();
+            RefreshRoofs();
             if (_roofHwnd != IntPtr.Zero && _driftTick % 300 == 0) ApplyRoofStyles(_roofHwnd);
 
             if (_mode == SnowMode.DesktopOnly && _driftTick % 300 == 0 && !_attachedBehindIcons)
@@ -1495,13 +1497,40 @@ namespace DesktopSnow
                 }
                 double w = e.Right - e.Left;
                 double hh = e.Bottom - e.Top;
-                if (w < 100 || hh < 80) return true;
-                if (w >= W() - 40 && hh >= H() - 100) return true;
+                if (w < 60 || hh < 60) return true;
                 _enumList.Add(hWnd);
                 _enumRects.Add(e);
             }
             catch (Exception) { }
             return true;
+        }
+
+        int IndexOfHwnd(IntPtr h)
+        {
+            for (int k = 0; k < _enumList.Count; k++)
+            {
+                if (_enumList[k] == h) return k;
+            }
+            return -1;
+        }
+
+        Geometry ComputeRoofClip(Roof roof)
+        {
+            Rect band = new Rect(roof.L - 8.0, roof.T - 100.0, (roof.R - roof.L) + 16.0, 112.0);
+            Geometry clip = new RectangleGeometry(band);
+            for (int k = 0; k < _enumList.Count && k < roof.Z; k++)
+            {
+                RECT e = _enumRects[k];
+                Rect win = new Rect(
+                    e.Left - SystemParameters.VirtualScreenLeft,
+                    e.Top - SystemParameters.VirtualScreenTop,
+                    e.Right - e.Left,
+                    e.Bottom - e.Top);
+                if (!win.IntersectsWith(band)) continue;
+                win.Inflate(2.0, 2.0);
+                clip = new CombinedGeometry(GeometryCombineMode.Exclude, clip, new RectangleGeometry(win));
+            }
+            return clip;
         }
 
         void RefreshRoofs()
@@ -1511,49 +1540,60 @@ namespace DesktopSnow
             _enumRects.Clear();
             EnumWindows(_enumProc, IntPtr.Zero);
 
+            _roofSet.Clear();
+            for (int k = 0; k < _enumList.Count; k++)
+            {
+                RECT e = _enumRects[k];
+                double w = e.Right - e.Left;
+                double hh = e.Bottom - e.Top;
+                if (w >= 100.0 && hh >= 80.0 && !(w >= W() - 40.0 && hh >= H() - 100.0))
+                {
+                    _roofSet.Add(_enumList[k]);
+                }
+            }
+
             for (int i = _roofs.Count - 1; i >= 0; i--)
             {
                 Roof r = _roofs[i];
-                bool found = false;
-                for (int k = 0; k < _enumList.Count; k++)
-                {
-                    if (_enumList[k] != r.Hwnd) continue;
-                    found = true;
-                    RECT e = _enumRects[k];
-                    double nl = e.Left - SystemParameters.VirtualScreenLeft;
-                    double nt = e.Top - SystemParameters.VirtualScreenTop;
-                    double wpx = e.Right - e.Left;
-                    if (Math.Abs(nl - r.L) > 6.0 || Math.Abs(nt - r.T) > 6.0)
-                    {
-                        ReleaseRoofSnow(r);
-                        MoveRoofDropsOff(r);
-                        r.L = nl;
-                        r.T = nt;
-                        r.R = nl + wpx;
-                        r.B = nt + (e.Bottom - e.Top);
-                        r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
-                    }
-                    else
-                    {
-                        r.R = r.L + wpx;
-                        r.B = r.T + (e.Bottom - e.Top);
-                        if (r.Depths == null)
-                            r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
-                    }
-                    break;
-                }
-                if (!found)
+                int idx = IndexOfHwnd(r.Hwnd);
+                if (idx < 0 || !_roofSet.Contains(r.Hwnd))
                 {
                     ReleaseRoofSnow(r);
                     MoveRoofDropsOff(r);
                     if (r.Poly != null) _roofCanvas.Children.Remove(r.Poly);
                     _roofs.RemoveAt(i);
+                    continue;
+                }
+
+                RECT e = _enumRects[idx];
+                r.Z = idx;
+                double nl = e.Left - SystemParameters.VirtualScreenLeft;
+                double nt = e.Top - SystemParameters.VirtualScreenTop;
+                double wpx = e.Right - e.Left;
+                if (Math.Abs(nl - r.L) > 2.0 || Math.Abs(nt - r.T) > 2.0)
+                {
+                    ReleaseRoofSnow(r);
+                    MoveRoofDropsOff(r);
+                    r.L = nl;
+                    r.T = nt;
+                    r.R = nl + wpx;
+                    r.B = nt + (e.Bottom - e.Top);
+                    r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
+                    if (r.Poly != null) r.Poly.Points = new PointCollection();
+                }
+                else
+                {
+                    r.R = r.L + wpx;
+                    r.B = r.T + (e.Bottom - e.Top);
+                    if (r.Depths == null)
+                        r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
                 }
             }
 
             for (int k = 0; k < _enumList.Count; k++)
             {
                 IntPtr h = _enumList[k];
+                if (!_roofSet.Contains(h)) continue;
                 bool known = false;
                 for (int i = 0; i < _roofs.Count; i++)
                 {
@@ -1564,6 +1604,7 @@ namespace DesktopSnow
                     RECT e = _enumRects[k];
                     Roof r = new Roof();
                     r.Hwnd = h;
+                    r.Z = k;
                     r.L = e.Left - SystemParameters.VirtualScreenLeft;
                     r.T = e.Top - SystemParameters.VirtualScreenTop;
                     r.R = e.Right - SystemParameters.VirtualScreenLeft;
@@ -1573,30 +1614,33 @@ namespace DesktopSnow
                 }
             }
 
-            RoofMeltAndSmooth();
-            UpdateRoofShapes();
+            if (_driftTick % 3 == 0)
+            {
+                RoofMeltAndSmooth();
+                UpdateRoofShapes();
+            }
         }
 
         void ReleaseRoofSnow(Roof roof)
         {
             if (roof.Depths == null || _roofCanvas == null) return;
             int spawned = 0;
-            for (int i = 0; i < roof.Depths.Length && spawned < 40; i++)
+            for (int i = 0; i < roof.Depths.Length && spawned < 64; i++)
             {
-                if (roof.Depths[i] < 2.0) continue;
-                int n = 1 + (int)(roof.Depths[i] / 6.0);
-                for (int k = 0; k < n && spawned < 40; k++)
+                if (roof.Depths[i] < 1.5) continue;
+                int n = 1 + (int)(roof.Depths[i] / 5.0);
+                for (int k = 0; k < n && spawned < 64; k++)
                 {
                     Confetto c = new Confetto();
                     c.X = roof.L + i * _driftSegment + _rng.NextDouble() * _driftSegment;
                     c.Y = roof.T - roof.Depths[i] * 0.5;
-                    c.Vx = -60.0 + _rng.NextDouble() * 120.0;
-                    c.Vy = 20.0 + _rng.NextDouble() * 40.0;
-                    c.Life = 0.5 + _rng.NextDouble() * 0.5;
+                    c.Vx = -80.0 + _rng.NextDouble() * 160.0;
+                    c.Vy = 20.0 + _rng.NextDouble() * 50.0;
+                    c.Life = 0.6 + _rng.NextDouble() * 0.6;
                     Ellipse puff = new Ellipse
                     {
-                        Width = 2.0 + _rng.NextDouble() * 2.5,
-                        Height = 2.0 + _rng.NextDouble() * 2.5,
+                        Width = 2.5 + _rng.NextDouble() * 3.0,
+                        Height = 2.5 + _rng.NextDouble() * 3.0,
                         Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
                     };
                     c.Shape = puff;
@@ -1705,6 +1749,20 @@ namespace DesktopSnow
                 pts.Add(new Point(r.R + 3, r.T + 5));
                 pts.Add(new Point(r.L - 3, r.T + 5));
                 r.Poly.Points = pts;
+                Geometry clip = ComputeRoofClip(r);
+                r.Poly.Clip = clip;
+            }
+
+            for (int i = 0; i < _drops.Count; i++)
+            {
+                SnowDrop dr = _drops[i];
+                if (dr.Held || dr.RoofHwnd == IntPtr.Zero)
+                {
+                    if (dr.Shape.Clip != null) dr.Shape.Clip = null;
+                    continue;
+                }
+                Roof owner = RoofByHwnd(dr.RoofHwnd);
+                dr.Shape.Clip = (owner != null) ? ComputeRoofClip(owner) : null;
             }
         }
 
