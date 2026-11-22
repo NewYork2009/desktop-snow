@@ -202,6 +202,7 @@ namespace DesktopSnow
         double _birdTimer = 10.0;
         double _birdDropT = 2.0;
         double _birdDropsLeft;
+        readonly List<Feather> _feathers = new List<Feather>();
         readonly Random _rng = new Random();
         int _targetCount = 180;
         SnowMode _mode = SnowMode.DesktopOnly;
@@ -893,6 +894,7 @@ namespace DesktopSnow
                 _balls.RemoveAt(i);
             }
             _ballHeld = null;
+            _grabbed = null;
         }
 
         void CleanupSeasonActors()
@@ -1207,7 +1209,7 @@ namespace DesktopSnow
             };
             f.Tint = tints[_rng.Next(tints.Length)];
 
-            Ellipse shape = new Ellipse { Width = 7.5, Height = 4.8 };
+            Ellipse shape = new Ellipse { Width = 9.0, Height = 5.5 };
             shape.Fill = new LinearGradientBrush(Color.FromRgb(255, 236, 244), f.Tint, 90.0);
             shape.Opacity = f.Opacity;
             RotateTransform rt = new RotateTransform(_rng.NextDouble() * 360.0);
@@ -1250,7 +1252,7 @@ namespace DesktopSnow
                 (byte)Math.Min(255, f.Tint.G + 45),
                 (byte)Math.Min(255, f.Tint.B + 45));
 
-            Ellipse shape = new Ellipse { Width = 11.0, Height = 6.5 };
+            Ellipse shape = new Ellipse { Width = 12.5, Height = 7.2 };
             shape.Fill = new LinearGradientBrush(light, f.Tint, 45.0);
             shape.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
             shape.StrokeThickness = 0.6;
@@ -1311,6 +1313,13 @@ namespace DesktopSnow
                 picker.WindowStartupLocation = WindowStartupLocation.CenterScreen;
                 picker.Topmost = true;
                 picker.Background = new SolidColorBrush(Color.FromRgb(22, 20, 31));
+                picker.PreviewKeyDown += delegate(object pks, System.Windows.Input.KeyEventArgs pke)
+                {
+                    if (pke.Key == System.Windows.Input.Key.Escape)
+                    {
+                        try { picker.Close(); } catch (Exception) { }
+                    }
+                };
 
                 Grid root = new Grid();
                 root.Margin = new Thickness(14);
@@ -1323,9 +1332,26 @@ namespace DesktopSnow
                 title.FontSize = 15;
                 title.FontWeight = FontWeights.Bold;
                 title.Foreground = new SolidColorBrush(Color.FromRgb(214, 190, 255));
-                title.Margin = new Thickness(6, 2, 0, 12);
+                title.Margin = new Thickness(6, 2, 44, 12);
                 Grid.SetRow(title, 0);
                 root.Children.Add(title);
+
+                Button close = new Button();
+                close.Content = "\u00d7";
+                close.Width = 28;
+                close.Height = 28;
+                close.HorizontalAlignment = HorizontalAlignment.Right;
+                close.VerticalAlignment = VerticalAlignment.Top;
+                close.Foreground = Brushes.White;
+                close.Background = new SolidColorBrush(Color.FromRgb(40, 34, 58));
+                close.BorderBrush = new SolidColorBrush(Color.FromRgb(108, 70, 200));
+                close.Cursor = System.Windows.Input.Cursors.Hand;
+                Grid.SetRow(close, 0);
+                close.Click += delegate
+                {
+                    try { picker.Close(); } catch (Exception) { }
+                };
+                root.Children.Add(close);
 
                 System.Windows.Controls.Primitives.UniformGrid ug = new System.Windows.Controls.Primitives.UniformGrid();
                 ug.Rows = 2;
@@ -2277,6 +2303,10 @@ namespace DesktopSnow
         {
             InitDrift();
             BuildMoon();
+            if (_moon != null)
+            {
+                _moon.Visibility = (_season == Season.Winter) ? Visibility.Visible : Visibility.Collapsed;
+            }
             BuildCountdown();
             AddFlakes(_targetCount);
             _clock = Stopwatch.StartNew();
@@ -3306,6 +3336,7 @@ namespace DesktopSnow
 
         void EnsureIcicles(Roof r)
         {
+            if (_season != Season.Winter) return;
             if (_roofCanvas == null || r == null || r.Depths == null || r.Depths.Length < 6) return;
             int have = 0;
             List<int> taken = new List<int>();
