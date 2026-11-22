@@ -3656,7 +3656,6 @@ namespace DesktopSnow
             try
             {
                 if (hWnd == _hwnd || hWnd == _roofHwnd) return true;
-                if (_settingsHwnd != IntPtr.Zero && hWnd == _settingsHwnd) return true;
                 if (!IsWindowVisible(hWnd) || IsIconic(hWnd)) return true;
                 int style = GetWindowLong(hWnd, GWL_STYLE);
                 if ((style & WS_CAPTION) != WS_CAPTION) return true;
@@ -3899,7 +3898,8 @@ namespace DesktopSnow
                     RECT e = _enumRects[k];
                     double w = e.Right - e.Left;
                     double hh = e.Bottom - e.Top;
-                    if (w >= 100.0 && hh >= 80.0 && !(w >= W() - 40.0 && hh >= H() - 100.0))
+                    if (w >= 100.0 && hh >= 80.0 && !(w >= W() - 40.0 && hh >= H() - 100.0)
+                        && _enumList[k] != _settingsHwnd)
                     {
                         _roofSet.Add(_enumList[k]);
                     }
