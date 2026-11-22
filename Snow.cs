@@ -1044,20 +1044,29 @@ namespace DesktopSnow
             SnowBall b = _ballHeld;
             if (b == null || !b.Held) return;
             double dx = mx - _ballLastX;
-            if (b.R < 30.0 && my < _groundY &&
-                InSnowZone(b.X + b.R, b.Y + b.R * 2.0))
+            bool inDrift = my < _groundY &&
+                InSnowZone(b.X + b.R, b.Y + b.R * 2.0);
+            if (b.R < 30.0 && inDrift)
             {
-                double gr = Math.Min(1.2, Math.Abs(dx) * 0.02);
+                double gr = Math.Min(1.4, Math.Abs(dx) * 0.03);
                 if (gr > 0.02)
                 {
                     b.R += gr;
-                    ScrapeSnow(b.X + b.R, gr * 0.25);
                     ScaleTransform st = b.Shape.RenderTransform as ScaleTransform;
                     if (st != null)
                     {
                         st.ScaleX = b.R / 9.0;
                         st.ScaleY = b.R / 9.0;
                     }
+                }
+            }
+            if (inDrift)
+            {
+                ScrapeSnow(b.X + b.R, 0.6 + Math.Abs(dx) * 0.25);
+                if (_driftTick % 10 == 0)
+                {
+                    SnowSplash(b.X + b.R + _rng.NextDouble() * 20.0 - 10.0,
+                        b.Y + b.R * 2.0, 2);
                 }
             }
             b.X = mx - b.R;
@@ -1429,27 +1438,27 @@ namespace DesktopSnow
             if (_canvas == null) return;
             _countdownBoard = new Rectangle
             {
-                Width = 236,
-                Height = 40,
-                RadiusX = 8,
-                RadiusY = 8,
+                Width = 330,
+                Height = 44,
+                RadiusX = 9,
+                RadiusY = 9,
                 Fill = new SolidColorBrush(Color.FromArgb(150, 30, 45, 65)),
                 Stroke = new SolidColorBrush(Color.FromArgb(102, 255, 255, 255)),
                 StrokeThickness = 1.0
             };
             System.Windows.Controls.Panel.SetZIndex(_countdownBoard, 56);
-            Canvas.SetLeft(_countdownBoard, 18.0);
             _canvas.Children.Add(_countdownBoard);
             _countdownText = new TextBlock
             {
                 Text = "",
                 Foreground = new SolidColorBrush(Color.FromRgb(240, 246, 255)),
                 FontFamily = new FontFamily("Segoe UI"),
-                FontSize = 15.5,
-                FontWeight = FontWeights.Bold
+                FontSize = 17.0,
+                FontWeight = FontWeights.Bold,
+                TextAlignment = System.Windows.TextAlignment.Center,
+                Width = 330.0
             };
             System.Windows.Controls.Panel.SetZIndex(_countdownText, 57);
-            Canvas.SetLeft(_countdownText, 34.0);
             _canvas.Children.Add(_countdownText);
             _countdownBoard.Visibility = Visibility.Collapsed;
             _countdownText.Visibility = Visibility.Collapsed;
@@ -1472,8 +1481,11 @@ namespace DesktopSnow
             _countdownText.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
                 "До Нового года: {0} д {1:00}:{2:00}:{3:00}",
                 (int)sp.TotalDays, sp.Hours, sp.Minutes, sp.Seconds);
-            Canvas.SetTop(_countdownBoard, _groundY - 92.0);
-            Canvas.SetTop(_countdownText, _groundY - 85.0);
+            double bx = W() - 18.0 - 330.0;
+            Canvas.SetLeft(_countdownBoard, bx);
+            Canvas.SetTop(_countdownBoard, _groundY - 96.0);
+            Canvas.SetLeft(_countdownText, bx);
+            Canvas.SetTop(_countdownText, _groundY - 88.0);
             _countdownBoard.Visibility = Visibility.Visible;
             _countdownText.Visibility = Visibility.Visible;
         }
