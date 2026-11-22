@@ -206,6 +206,9 @@ namespace DesktopSnow
         double _grinchDelay;
         double _grinchPhase;
         double _grinchSink;
+        double _grinchDeadT;
+        bool _grinchLanded;
+        double _grinchSlide;
         double _grinchStealTimer;
         HookProc _hookProc;
         IntPtr _hook = IntPtr.Zero;
@@ -2111,6 +2114,9 @@ namespace DesktopSnow
             _canvas.Children.Add(_grinch);
             _grinchActive = true;
             _grinchDead = false;
+            _grinchDeadT = 0.0;
+            _grinchLanded = false;
+            _grinchSlide = 0.0;
             _grinchSink = 0.0;
             _grinchSteals = 0;
             _grinchStealTimer = 1.0;
@@ -2122,9 +2128,10 @@ namespace DesktopSnow
         {
             if (_grinch == null || _grinchDead || !_grinchActive) return;
             _grinchDead = true;
+            _grinchDeadT = 0.0;
+            _grinchLanded = false;
+            _grinchSlide = 0.0;
             if (_grinchLoot != null) _grinchLoot.Visibility = Visibility.Collapsed;
-            double landY = _groundY - _depths[DriftIndexFor(_grinchX + 32.0)];
-            SnowSplash(_grinchX + 32.0, landY, 10);
             Log("grinch downed");
         }
 
@@ -2155,15 +2162,41 @@ namespace DesktopSnow
 
             if (_grinchDead)
             {
-                if (_grinchRot.Angle < 94.0)
+                _grinchDeadT += dt;
+                double tilt;
+                if (_grinchDeadT < 0.22)
                 {
-                    _grinchRot.Angle = Math.Min(94.0, _grinchRot.Angle + 260.0 * dt);
+                    tilt = -30.0 * (_grinchDeadT / 0.22);
+                    _grinchX -= _grinchDir * 150.0 * dt;
+                }
+                else if (_grinchDeadT < 0.52)
+                {
+                    double t = (_grinchDeadT - 0.22) / 0.30;
+                    tilt = -30.0 + t * 128.0;
+                    if (tilt > 60.0 && !_grinchLanded)
+                    {
+                        _grinchLanded = true;
+                        SnowSplash(_grinchX + w / 2.0, landY, 16);
+                        _grinchSlide = _grinchDir * 95.0;
+                        if (_grinchSteals > 0)
+                        {
+                            _grinchSteals--;
+                            SpawnDrop(_grinchX + _grinchDir * 46.0, landY - 36.0,
+                                -_grinchDir * 90.0 + _wind * 0.5, -190.0, false);
+                        }
+                    }
+                    if (tilt > 98.0) tilt = 98.0;
                 }
                 else
                 {
-                    _grinchSink += 10.0 * dt;
+                    double e = Math.Exp(-(_grinchDeadT - 0.52) * 3.5);
+                    tilt = 88.0 + 10.0 * e;
+                    _grinchX += _grinchSlide * dt;
+                    _grinchSlide -= _grinchSlide * 4.0 * dt;
+                    _grinchSink += 7.5 * dt;
                     if (_grinchSink >= h)
                     {
+                        SnowSplash(_grinchX + w / 2.0, landY, 8);
                         _canvas.Children.Remove(_grinch);
                         _grinch = null;
                         _grinchActive = false;
@@ -2171,15 +2204,17 @@ namespace DesktopSnow
                         return;
                     }
                 }
+                if (_grinchRot != null) _grinchRot.Angle = tilt;
                 Canvas.SetLeft(_grinch, _grinchX);
                 Canvas.SetTop(_grinch, landY - h + _grinchSink);
-                if (_driftTick % 10 == 0) SnowSplash(_grinchX + w / 2.0, landY, 3);
+                if (_grinchLanded && _driftTick % 10 == 0) SnowSplash(_grinchX + w / 2.0, landY, 3);
                 return;
             }
 
             _grinchPhase += dt * 8.0;
             _grinchX += _grinchDir * 95.0 * dt;
             double bob = Math.Sin(_grinchPhase * 2.0) * 1.5;
+            if (_grinchRot != null) _grinchRot.Angle = Math.Sin(_grinchPhase * 2.0) * 4.0;
             Canvas.SetLeft(_grinch, _grinchX);
             Canvas.SetTop(_grinch, landY - h + bob);
 
