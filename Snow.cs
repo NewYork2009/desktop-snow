@@ -855,7 +855,21 @@ namespace DesktopSnow
         bool InSnowZone(double x, double y)
         {
             if (_depths == null || _groundY <= 0.0) return false;
+            if (y >= _groundY) return false;
             return y >= _groundY - _depths[DriftIndexFor(x)] - 6.0;
+        }
+
+        void ScrapeSnow(double x, double amount)
+        {
+            if (_depths == null) return;
+            int idx = DriftIndexFor(x);
+            for (int d = -2; d <= 2; d++)
+            {
+                int j = idx + d;
+                if (j < 0 || j >= _depths.Length) continue;
+                _depths[j] -= amount / (1 + d * d);
+                if (_depths[j] < 0.0) _depths[j] = 0.0;
+            }
         }
 
         SnowBall FindBall(double mx, double my)
@@ -963,12 +977,14 @@ namespace DesktopSnow
             SnowBall b = _ballHeld;
             if (b == null || !b.Held) return;
             double dx = mx - _ballLastX;
-            if (b.R < 30.0)
+            if (b.R < 30.0 && my < _groundY &&
+                InSnowZone(b.X + b.R, b.Y + b.R * 2.0))
             {
-                double gr = Math.Min(2.5, Math.Abs(dx) * 0.05);
+                double gr = Math.Min(1.2, Math.Abs(dx) * 0.02);
                 if (gr > 0.02)
                 {
                     b.R += gr;
+                    ScrapeSnow(b.X + b.R, gr * 0.25);
                     ScaleTransform st = b.Shape.RenderTransform as ScaleTransform;
                     if (st != null)
                     {
