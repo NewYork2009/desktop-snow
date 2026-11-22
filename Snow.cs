@@ -227,6 +227,7 @@ namespace DesktopSnow
         Canvas _grinch;
         RotateTransform _grinchRot;
         Canvas _grinchLoot;
+        readonly List<Canvas> _grinchStack = new List<Canvas>();
         double _grinchIdleTimer = 20.0;
         Window _roofWindow;
         Canvas _roofCanvas;
@@ -3108,9 +3109,23 @@ namespace DesktopSnow
             _grinchSlide = 0.0;
             _grinchSink = 0.0;
             _grinchSteals = 0;
+            _grinchStack.Clear();
             _grinchStealTimer = 1.0;
             _grinchPhase = 0.0;
             Log("grinch appeared");
+        }
+
+        void AttachGrinchGift()
+        {
+            if (_grinch == null || _grinchStack.Count >= 6) return;
+            Canvas gift = BuildGift();
+            gift.RenderTransformOrigin = new Point(0.5, 0.5);
+            gift.RenderTransform = new RotateTransform(-12.0 + _rng.NextDouble() * 24.0);
+            int n = _grinchStack.Count;
+            Canvas.SetLeft(gift, 40.0 - _rng.NextDouble() * 8.0 - n * 1.5);
+            Canvas.SetTop(gift, 40.0 - (n + 1) * 9.0 + _rng.NextDouble() * 4.0);
+            _grinch.Children.Add(gift);
+            _grinchStack.Add(gift);
         }
 
         void GrinchDie()
@@ -3168,12 +3183,16 @@ namespace DesktopSnow
                         System.Windows.Controls.Panel.SetZIndex(_grinch, 45);
                         SnowSplash(_grinchX + w / 2.0, landY, 16);
                         _grinchSlide = _grinchDir * 95.0;
-                        if (_grinchSteals > 0)
+                        int sp = Math.Min(_grinchStack.Count, 4);
+                        if (sp == 0 && _grinchSteals > 0) sp = 1;
+                        for (int n = 0; n < sp; n++)
                         {
-                            _grinchSteals--;
-                            SpawnDrop(_grinchX + _grinchDir * 46.0, landY - 36.0,
-                                -_grinchDir * 90.0 + _wind * 0.5, -190.0, false);
+                            SpawnDrop(_grinchX + _grinchDir * 40.0 - n * 8.0 * _grinchDir,
+                                landY - 30.0 - n * 8.0,
+                                -_grinchDir * (70.0 + _rng.NextDouble() * 60.0) + _wind * 0.5,
+                                -160.0 - _rng.NextDouble() * 80.0, false);
                         }
+                        _grinchSteals = 0;
                     }
                     if (tilt > 98.0) tilt = 98.0;
                 }
@@ -3191,6 +3210,7 @@ namespace DesktopSnow
                         _canvas.Children.Remove(_grinch);
                         _grinch = null;
                         _grinchActive = false;
+                        _grinchStack.Clear();
                         Log("grinch buried");
                         SpawnRabbit(gx);
                         return;
@@ -3224,6 +3244,7 @@ namespace DesktopSnow
                     {
                         _canvas.Children.Remove(d.Shape);
                         d.Popped = true;
+                        AttachGrinchGift();
                         _grinchLoot.Visibility = Visibility.Visible;
                         _grinchSteals++;
                         SnowSplash(dcx, landY, 6);
@@ -3238,6 +3259,7 @@ namespace DesktopSnow
                 _canvas.Children.Remove(_grinch);
                 _grinch = null;
                 _grinchActive = false;
+                _grinchStack.Clear();
                 Log("grinch left");
             }
         }
