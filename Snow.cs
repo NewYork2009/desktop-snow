@@ -2948,7 +2948,7 @@ namespace DesktopSnow
             if (_decoTimer <= 0.0)
             {
                 _decoTimer = 0.1 + _rng.NextDouble() * 0.15;
-                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 380)
+                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 600)
                 {
                     for (int dk = 0; dk < 4; dk++)
                     {
@@ -3063,7 +3063,7 @@ namespace DesktopSnow
                         {
                             if (IsRoofOccluded(r, f.X)) continue;
                             DepositRoof(r, f.X, f.R * 5.0);
-                            if (_season == Season.Autumn && _decos.Count < 380)
+                            if (_season == Season.Autumn && _decos.Count < 600)
                             {
                                 int li = (int)((f.X - r.L) / _driftSegment);
                                 if (li < 0) li = 0;
@@ -3089,7 +3089,7 @@ namespace DesktopSnow
                     else
                     {
                         DepositSnow(f.X, f.R * 5.0);
-                        if (_season == Season.Autumn && _decos.Count < 380)
+                        if (_season == Season.Autumn && _decos.Count < 600)
                         {
                             SpawnLeafDecoAt(f.X, _groundY - _depths[DriftIndexFor(f.X)] - 1.0 + _rng.NextDouble() * 2.5, false, null, f.Tint);
                         }
@@ -3779,7 +3779,7 @@ namespace DesktopSnow
 
         Geometry ComputeRoofClip(Roof roof)
         {
-            Rect band = new Rect(roof.L - 8.0, roof.T - 100.0, (roof.R - roof.L) + 16.0, 112.0);
+            Rect band = new Rect(roof.L + 1.0, roof.T - 100.0, Math.Max(4.0, (roof.R - roof.L) - 2.0), 148.0);
             Geometry clip = new RectangleGeometry(band);
             for (int k = 0; k < _enumList.Count && k < roof.Z; k++)
             {
@@ -3837,6 +3837,7 @@ namespace DesktopSnow
                 double w = 3.5 + _rng.NextDouble() * 3.5;
                 double h = 9.0 + r.Depths[seg] * 0.9 + _rng.NextDouble() * 8.0;
                 double x = r.L + seg * _driftSegment + 3.0 + _rng.NextDouble() * (_driftSegment - 8.0);
+                if (x + w > r.R - 2.0) x = r.R - 2.0 - w;
                 double y = r.T - r.Depths[seg] + 1.0;
                 if (IsRoofOccluded(r, x)) continue;
                 Polygon p = BuildIcicle(w, h);
@@ -4631,18 +4632,46 @@ namespace DesktopSnow
         void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint)
         {
             if (_canvas == null || _roofCanvas == null) return;
-            if (_decos.Count >= 380) return;
+            if (_decos.Count >= 600) return;
             DriftDeco d = new DriftDeco();
+            double w = 11.0 + _rng.NextDouble() * 7.0;
+            double h = w * (0.6 + _rng.NextDouble() * 0.3);
+            if (onRoof && refRoof != null)
+            {
+                if (x < refRoof.L + 3.0) x = refRoof.L + 3.0 + _rng.NextDouble() * 4.0;
+                if (x > refRoof.R - 3.0 - w) x = refRoof.R - 3.0 - w - _rng.NextDouble() * 4.0;
+                if (x < refRoof.L || x > refRoof.R) return;
+            }
+            else
+            {
+                if (x < 2.0) x = 2.0 + _rng.NextDouble() * 4.0;
+                if (x > W() - 2.0 - w) x = W() - 2.0 - w - _rng.NextDouble() * 4.0;
+            }
+            Polygon leaf = new Polygon();
             Color light = Color.FromRgb(
-                (byte)Math.Min(255, tint.R + 45),
-                (byte)Math.Min(255, tint.G + 45),
-                (byte)Math.Min(255, tint.B + 45));
-            Ellipse leaf = new Ellipse { Width = 9.0 + _rng.NextDouble() * 4.0, Height = 5.4 + _rng.NextDouble() * 2.4 };
-            leaf.Fill = new LinearGradientBrush(light, tint, 45.0);
-            leaf.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
-            leaf.StrokeThickness = 0.6;
-            leaf.RenderTransform = new RotateTransform(_rng.NextDouble() * 360.0);
-            leaf.Opacity = 0.7 + _rng.NextDouble() * 0.3;
+                (byte)Math.Min(255, tint.R + 50),
+                (byte)Math.Min(255, tint.G + 50),
+                (byte)Math.Min(255, tint.B + 40));
+            leaf.Fill = new LinearGradientBrush(light, tint, 60.0);
+            leaf.Stroke = new SolidColorBrush(Color.FromArgb(150, 70, 36, 16));
+            leaf.StrokeThickness = 0.8;
+            PointCollection pts = new PointCollection();
+            int lobes = 5 + _rng.Next(3);
+            double rot = _rng.NextDouble() * Math.PI * 2.0;
+            double ca = Math.Cos(rot), sa = Math.Sin(rot);
+            for (int i = 0; i < lobes; i++)
+            {
+                double ang = Math.PI * 2.0 * i / lobes;
+                double angn = ang + Math.PI / lobes;
+                double ro = h * (0.55 + _rng.NextDouble() * 0.5);
+                double ri = w * (0.18 + _rng.NextDouble() * 0.12);
+                pts.Add(new Point(x + Math.Cos(ang) * ro * ca - Math.Sin(ang) * ro * sa,
+                                  y - Math.Sin(ang) * ro * ca - Math.Cos(ang) * ro * sa * 0.75));
+                pts.Add(new Point(x + Math.Cos(angn) * ri * ca - Math.Sin(angn) * ri * sa,
+                                  y - Math.Sin(angn) * ri * ca - Math.Cos(angn) * ri * sa * 0.75));
+            }
+            leaf.Points = pts;
+            leaf.Opacity = 0.75 + _rng.NextDouble() * 0.25;
             d.Shape = leaf;
             d.X = x;
             d.Y = y;
@@ -4651,10 +4680,17 @@ namespace DesktopSnow
             d.MaxLife = -1.0;
             d.Life = -1.0;
             System.Windows.Controls.Panel.SetZIndex(leaf, 56);
-            Canvas.SetLeft(leaf, x - leaf.Width * 0.5);
-            Canvas.SetTop(leaf, y - leaf.Height * 0.5);
-            if (onRoof) _roofCanvas.Children.Add(leaf);
-            else _canvas.Children.Add(leaf);
+            Canvas.SetLeft(leaf, 0.0);
+            Canvas.SetTop(leaf, 0.0);
+            if (onRoof)
+            {
+                if (refRoof != null) leaf.Clip = ComputeRoofClip(refRoof);
+                _roofCanvas.Children.Add(leaf);
+            }
+            else
+            {
+                _canvas.Children.Add(leaf);
+            }
             _decos.Add(d);
         }
 
