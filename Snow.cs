@@ -342,6 +342,10 @@ namespace DesktopSnow
             public double Vx;
             public double Vy;
             public double Life;
+            public int Kind;
+            public Color Tint;
+            public double Rot;
+            public double RotV;
             public FrameworkElement Shape;
         }
 
@@ -2952,11 +2956,11 @@ namespace DesktopSnow
             if (_decoTimer <= 0.0)
             {
                 _decoTimer = 0.08 + _rng.NextDouble() * 0.12;
-                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 1500)
+                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 2000)
                 {
-                    for (int dk = 0; dk < 12; dk++)
+                    for (int dk = 0; dk < 18; dk++)
                     {
-                        if (_decos.Count >= 1500) break;
+                        if (_decos.Count >= 2000) break;
                         SpawnDriftDeco();
                     }
                 }
@@ -3067,7 +3071,7 @@ namespace DesktopSnow
                         {
                             if (IsRoofOccluded(r, f.X)) continue;
                             DepositRoof(r, f.X, f.R * 5.0);
-                            if (_season == Season.Autumn && _decos.Count < 1500)
+                            if (_season == Season.Autumn && _decos.Count < 2000)
                             {
                                 int li = (int)((f.X - r.L) / _driftSegment);
                                 if (li < 0) li = 0;
@@ -3093,7 +3097,7 @@ namespace DesktopSnow
                     else
                     {
                         DepositSnow(f.X, f.R * 5.0);
-                        if (_season == Season.Autumn && _decos.Count < 1500)
+                        if (_season == Season.Autumn && _decos.Count < 2000)
                         {
                             SpawnLeafDecoAt(f.X, _groundY - _depths[DriftIndexFor(f.X)] - 1.0 + _rng.NextDouble() * 2.5, false, null, f.Tint, _groundY - _depths[DriftIndexFor(f.X)]);
                         }
@@ -4058,21 +4062,44 @@ namespace DesktopSnow
                     Confetto c = new Confetto();
                     c.X = roof.L + i * _driftSegment + _rng.NextDouble() * _driftSegment;
                     c.Y = roof.T - _rng.NextDouble() * Math.Max(1.0, roof.Depths[i]);
-                    c.Vx = -45.0 + _rng.NextDouble() * 90.0;
-                    c.Vy = 25.0 + _rng.NextDouble() * 70.0;
-                    c.Life = 0.5 + _rng.NextDouble() * 0.5;
-                    Ellipse puff = new Ellipse
+                    if (_season == Season.Autumn)
                     {
-                        Width = 3.0 + _rng.NextDouble() * 3.5,
-                        Height = 3.0 + _rng.NextDouble() * 3.5,
-                        Fill = new SolidColorBrush(SeasonSplashColor())
-                    };
-                    c.Shape = puff;
-                    System.Windows.Controls.Panel.SetZIndex(puff, 90);
-                    Canvas.SetLeft(puff, c.X);
-                    Canvas.SetTop(puff, c.Y);
+                        c.Vx = -60.0 + _rng.NextDouble() * 120.0;
+                        c.Vy = -20.0 - _rng.NextDouble() * 60.0;
+                        c.Life = 1.4 + _rng.NextDouble() * 1.2;
+                        c.Kind = 2;
+                        c.Tint = PickLeafTint();
+                        c.Rot = _rng.NextDouble() * 360.0;
+                        c.RotV = -220.0 + _rng.NextDouble() * 440.0;
+                        Color lt = Color.FromRgb(
+                            (byte)Math.Min(255, c.Tint.R + 45),
+                            (byte)Math.Min(255, c.Tint.G + 45),
+                            (byte)Math.Min(255, c.Tint.B + 45));
+                        Ellipse leafy = new Ellipse { Width = 12.5, Height = 7.2 };
+                        leafy.Fill = new LinearGradientBrush(lt, c.Tint, 45.0);
+                        leafy.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
+                        leafy.StrokeThickness = 0.6;
+                        leafy.RenderTransform = new RotateTransform(c.Rot);
+                        c.Shape = leafy;
+                    }
+                    else
+                    {
+                        c.Vx = -45.0 + _rng.NextDouble() * 90.0;
+                        c.Vy = 25.0 + _rng.NextDouble() * 70.0;
+                        c.Life = 0.5 + _rng.NextDouble() * 0.5;
+                        Ellipse puff = new Ellipse
+                        {
+                            Width = 3.0 + _rng.NextDouble() * 3.5,
+                            Height = 3.0 + _rng.NextDouble() * 3.5,
+                            Fill = new SolidColorBrush(SeasonSplashColor())
+                        };
+                        c.Shape = puff;
+                    }
+                    System.Windows.Controls.Panel.SetZIndex(c.Shape, 90);
+                    Canvas.SetLeft(c.Shape, c.X);
+                    Canvas.SetTop(c.Shape, c.Y);
                     _confetti.Add(c);
-                    _canvas.Children.Add(puff);
+                    _canvas.Children.Add(c.Shape);
                     spawned++;
                 }
                 roof.Depths[i] = 0.0;
@@ -4564,9 +4591,30 @@ namespace DesktopSnow
                     _confetti.RemoveAt(i);
                     continue;
                 }
-                c.Vy += 350.0 * dt;
-                c.X += c.Vx * dt;
-                c.Y += c.Vy * dt;
+                if (c.Kind == 2)
+                {
+                    c.Vy += 160.0 * dt;
+                    c.X += c.Vx * dt + Math.Sin(c.Life * 9.0 + c.Rot) * 30.0 * dt;
+                    c.Y += c.Vy * dt;
+                    c.Rot += c.RotV * dt;
+                    RotateTransform rt = c.Shape.RenderTransform as RotateTransform;
+                    if (rt != null) rt.Angle = c.Rot;
+                    double cx2 = Math.Max(0.0, Math.Min(W() - 1.0, c.X));
+                    int li = DriftIndexFor(cx2);
+                    if (_depths != null && _groundY > 0.0 && c.Y >= _groundY - _depths[li] - 2.0)
+                    {
+                        SpawnLeafDecoAt(cx2, _groundY - _depths[li] - 1.0 + _rng.NextDouble() * 2.0, false, null, c.Tint, _groundY - _depths[li]);
+                        RemoveShape(c.Shape);
+                        _confetti.RemoveAt(i);
+                        continue;
+                    }
+                }
+                else
+                {
+                    c.Vy += 350.0 * dt;
+                    c.X += c.Vx * dt;
+                    c.Y += c.Vy * dt;
+                }
                 c.Shape.Opacity = Math.Min(1.0, c.Life);
                 Canvas.SetLeft(c.Shape, c.X);
                 Canvas.SetTop(c.Shape, c.Y);
@@ -4642,7 +4690,7 @@ namespace DesktopSnow
         void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint, double surfY)
         {
             if (_canvas == null || _roofCanvas == null) return;
-            if (_decos.Count >= 1500) return;
+            if (_decos.Count >= 2000) return;
             DriftDeco d = new DriftDeco();
             double w = 11.0 + _rng.NextDouble() * 5.0;
             double h = w * (0.55 + _rng.NextDouble() * 0.12);
