@@ -236,6 +236,7 @@ namespace DesktopSnow
         readonly List<RECT> _enumRects = new List<RECT>();
         readonly List<Roof> _roofs = new List<Roof>();
         readonly HashSet<IntPtr> _roofSet = new HashSet<IntPtr>();
+        bool _fullscreenPresent;
         bool _grinchActive;
         bool _grinchDead;
         bool _grinchPending;
@@ -2428,6 +2429,7 @@ namespace DesktopSnow
                 double w = e.Right - e.Left;
                 double hh = e.Bottom - e.Top;
                 if (w < 60 || hh < 60) return true;
+                if (w >= W() - 40.0 && hh >= H() - 100.0) _fullscreenPresent = true;
                 _enumList.Add(hWnd);
                 _enumRects.Add(e);
             }
@@ -2507,17 +2509,21 @@ namespace DesktopSnow
             if (_roofCanvas == null || _enumProc == null) return;
             _enumList.Clear();
             _enumRects.Clear();
+            _fullscreenPresent = false;
             EnumWindows(_enumProc, IntPtr.Zero);
 
             _roofSet.Clear();
-            for (int k = 0; k < _enumList.Count; k++)
+            if (!_fullscreenPresent)
             {
-                RECT e = _enumRects[k];
-                double w = e.Right - e.Left;
-                double hh = e.Bottom - e.Top;
-                if (w >= 100.0 && hh >= 80.0 && !(w >= W() - 40.0 && hh >= H() - 100.0))
+                for (int k = 0; k < _enumList.Count; k++)
                 {
-                    _roofSet.Add(_enumList[k]);
+                    RECT e = _enumRects[k];
+                    double w = e.Right - e.Left;
+                    double hh = e.Bottom - e.Top;
+                    if (w >= 100.0 && hh >= 80.0 && !(w >= W() - 40.0 && hh >= H() - 100.0))
+                    {
+                        _roofSet.Add(_enumList[k]);
+                    }
                 }
             }
 
