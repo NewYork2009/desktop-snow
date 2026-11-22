@@ -900,8 +900,8 @@ namespace DesktopSnow
             {
                 if (_gustEnabled)
                 {
-                    _gustTarget = ((_rng.NextDouble() < 0.5) ? -1.0 : 1.0) * (110.0 + _rng.NextDouble() * 70.0);
-                    _gustLeft = 2.5 + _rng.NextDouble() * 3.5;
+                    _gustTarget = ((_rng.NextDouble() < 0.5) ? -1.0 : 1.0) * (180.0 + _rng.NextDouble() * 90.0);
+                    _gustLeft = 3.5 + _rng.NextDouble() * 4.5;
                     _gustTimer = 25.0 + _rng.NextDouble() * 20.0;
                 }
                 else
@@ -950,10 +950,25 @@ namespace DesktopSnow
                 if (_depths[i] < 0) _depths[i] = 0;
             }
 
+            if (Math.Abs(_gustPower) > 40.0 && _driftTmp != null && _driftTmp.Length == _depths.Length)
+            {
+                double amount = (Math.Abs(_gustPower) - 40.0) * dt * 0.30;
+                bool right = _gustPower > 0;
+                for (int i = 0; i < _depths.Length; i++) _driftTmp[i] = _depths[i];
+                for (int i = 0; i < _depths.Length; i++)
+                {
+                    int to = i + (right ? 1 : -1);
+                    if (to < 0 || to >= _depths.Length) continue;
+                    double take = Math.Min(_driftTmp[i], amount);
+                    _depths[i] -= take;
+                    _depths[to] += take * 0.9;
+                }
+            }
+
             _sparkleTimer -= dt;
             if (_sparkleTimer <= 0.0)
             {
-                _sparkleTimer = 0.12 + _rng.NextDouble() * 0.25;
+                _sparkleTimer = 0.08 + _rng.NextDouble() * 0.16;
                 if (_depths != null && _groundY > 0 && _sparkles.Count < 40)
                 {
                     for (int tries = 0; tries < 3; tries++)
@@ -990,7 +1005,8 @@ namespace DesktopSnow
                 double oldY = f.Y;
                 f.Phase += dt * f.SwaySpeed;
                 f.Y += f.Speed * dt;
-                f.X = f.BaseX + Math.Sin(f.Phase) * f.SwayAmp + _wind;
+                double gw = _wind + _gustPower * (0.35 + 0.65 * Math.Min(1.0, f.Y / H()));
+                f.X = f.BaseX + Math.Sin(f.Phase) * f.SwayAmp + gw;
 
                 bool roofLanded = false;
                 for (int ri = 0; ri < _roofs.Count; ri++)
@@ -1620,6 +1636,25 @@ namespace DesktopSnow
             return -1;
         }
 
+        Geometry ComputeDropClip(Roof roof)
+        {
+            Rect area = new Rect(roof.L - 24.0, roof.T - 90.0, (roof.R - roof.L) + 48.0, (roof.B - roof.T) + 140.0);
+            Geometry clip = new RectangleGeometry(area);
+            for (int k = 0; k < _enumList.Count && k < roof.Z; k++)
+            {
+                RECT e = _enumRects[k];
+                Rect win = new Rect(
+                    e.Left - SystemParameters.VirtualScreenLeft,
+                    e.Top - SystemParameters.VirtualScreenTop,
+                    e.Right - e.Left,
+                    e.Bottom - e.Top);
+                if (!win.IntersectsWith(area)) continue;
+                win.Inflate(2.0, 2.0);
+                clip = new CombinedGeometry(GeometryCombineMode.Exclude, clip, new RectangleGeometry(win));
+            }
+            return clip;
+        }
+
         Geometry ComputeRoofClip(Roof roof)
         {
             Rect band = new Rect(roof.L - 8.0, roof.T - 100.0, (roof.R - roof.L) + 16.0, 112.0);
@@ -1731,21 +1766,21 @@ namespace DesktopSnow
         {
             if (roof.Depths == null || _roofCanvas == null) return;
             int spawned = 0;
-            for (int i = 0; i < roof.Depths.Length && spawned < 120; i++)
+            for (int i = 0; i < roof.Depths.Length && spawned < 200; i++)
             {
-                int n = (int)(roof.Depths[i] / 3.0);
-                for (int k = 0; k < n && spawned < 120; k++)
+                int n = 1 + (int)(roof.Depths[i] / 2.5);
+                for (int k = 0; k < n && spawned < 200; k++)
                 {
                     Confetto c = new Confetto();
                     c.X = roof.L + i * _driftSegment + _rng.NextDouble() * _driftSegment;
-                    c.Y = roof.T - _rng.NextDouble() * roof.Depths[i];
-                    c.Vx = -60.0 + _rng.NextDouble() * 120.0;
-                    c.Vy = 40.0 + _rng.NextDouble() * 100.0;
-                    c.Life = 0.4 + _rng.NextDouble() * 0.5;
+                    c.Y = roof.T - _rng.NextDouble() * Math.Max(1.0, roof.Depths[i]);
+                    c.Vx = -45.0 + _rng.NextDouble() * 90.0;
+                    c.Vy = 25.0 + _rng.NextDouble() * 70.0;
+                    c.Life = 0.5 + _rng.NextDouble() * 0.5;
                     Ellipse puff = new Ellipse
                     {
-                        Width = 2.0 + _rng.NextDouble() * 4.0,
-                        Height = 2.0 + _rng.NextDouble() * 4.0,
+                        Width = 3.0 + _rng.NextDouble() * 3.5,
+                        Height = 3.0 + _rng.NextDouble() * 3.5,
                         Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
                     };
                     c.Shape = puff;
@@ -1860,17 +1895,33 @@ namespace DesktopSnow
                     _roofCanvas.Children.Add(r.Poly);
                 }
                 PointCollection pts = new PointCollection();
-                pts.Add(new Point(r.L - 3, r.T + 1));
                 int n = r.Depths.Length;
+                int first = -1, last = -1;
                 for (int i = 0; i < n; i++)
                 {
-                    double t = Math.Min(1.0, Math.Min(i, n - 1 - i) / 3.0);
+                    if (r.Depths[i] > 0.35)
+                    {
+                        last = i;
+                        if (first < 0) first = i;
+                    }
+                }
+                if (first < 0)
+                {
+                    if (r.Poly.Points.Count > 0) r.Poly.Points = new PointCollection();
+                    continue;
+                }
+                int a = Math.Max(0, first - 2);
+                int b = Math.Min(n - 1, last + 2);
+                pts.Add(new Point(r.L + a * _driftSegment, r.T + 1));
+                for (int i = a; i <= b; i++)
+                {
+                    double t = Math.Min(1.0, Math.Min(i - a, b - i) / 3.0);
                     double taper = t * t * (3.0 - 2.0 * t);
                     pts.Add(new Point(r.L + i * _driftSegment, r.T - r.Depths[i] * taper));
                 }
-                pts.Add(new Point(r.R + 3, r.T + 1));
-                pts.Add(new Point(r.R + 3, r.T + 2));
-                pts.Add(new Point(r.L - 3, r.T + 2));
+                pts.Add(new Point(r.L + b * _driftSegment, r.T + 1));
+                pts.Add(new Point(r.L + b * _driftSegment, r.T + 2));
+                pts.Add(new Point(r.L + a * _driftSegment, r.T + 2));
                 r.Poly.Points = pts;
                 Geometry clip = ComputeRoofClip(r);
                 r.Poly.Clip = clip;
@@ -1885,18 +1936,13 @@ namespace DesktopSnow
                     continue;
                 }
                 Roof owner = RoofByHwnd(dr.RoofHwnd);
-                dr.Shape.Clip = (owner != null) ? ComputeRoofClip(owner) : null;
+                dr.Shape.Clip = (owner != null) ? ComputeDropClip(owner) : null;
             }
         }
 
         void DepositRoof(Roof roof, double x, double amount)
         {
             if (roof.Depths == null) return;
-            double share = amount / roof.Depths.Length;
-            for (int i = 0; i < roof.Depths.Length; i++)
-            {
-                roof.Depths[i] += share * 0.25;
-            }
             int idx = (int)((x - roof.L) / _driftSegment);
             if (idx < 0) idx = 0;
             if (idx >= roof.Depths.Length) idx = roof.Depths.Length - 1;
@@ -1904,7 +1950,7 @@ namespace DesktopSnow
             {
                 int j = idx + d;
                 if (j < 0 || j >= roof.Depths.Length) continue;
-                roof.Depths[j] += amount * 0.75 / (1 + d * d);
+                roof.Depths[j] += amount * 1.3 / (1 + d * d);
             }
         }
 
@@ -1947,7 +1993,7 @@ namespace DesktopSnow
             Canvas prev = d.Shape.Parent as Canvas;
             if (prev != null && prev != _roofCanvas) prev.Children.Remove(d.Shape);
             _roofCanvas.Children.Add(d.Shape);
-            System.Windows.Controls.Panel.SetZIndex(d.Shape, 45);
+            System.Windows.Controls.Panel.SetZIndex(d.Shape, 55);
             RoofPuff(d.X + d.Shape.Width / 2.0, roof.T, 8);
         }
 
@@ -2185,16 +2231,17 @@ namespace DesktopSnow
             Sparkle s = new Sparkle();
             s.X = x + (_rng.NextDouble() - 0.5) * 10.0;
             s.Y = y - _rng.NextDouble() * 2.0;
-            s.MaxLife = 0.5 + _rng.NextDouble() * 0.7;
+            s.MaxLife = 0.8 + _rng.NextDouble() * 1.0;
             s.Life = s.MaxLife;
+            bool warm = _rng.NextDouble() < 0.4;
             byte v = (byte)(238 + _rng.Next(18));
             Ellipse e = new Ellipse
             {
-                Width = 1.2 + _rng.NextDouble() * 0.9,
-                Height = 1.2 + _rng.NextDouble() * 0.9,
-                Fill = new SolidColorBrush(Color.FromRgb(v, v, 255))
+                Width = 2.0 + _rng.NextDouble() * 1.6,
+                Height = 2.0 + _rng.NextDouble() * 1.6,
+                Fill = new SolidColorBrush(warm ? Color.FromRgb(255, 240, 170) : Color.FromRgb(v, v, 255))
             };
-            e.Opacity = 0.9;
+            e.Opacity = 1.0;
             s.Shape = e;
             System.Windows.Controls.Panel.SetZIndex(e, 55);
             Canvas.SetLeft(e, s.X);
@@ -2215,7 +2262,7 @@ namespace DesktopSnow
                     _sparkles.RemoveAt(i);
                     continue;
                 }
-                s.Shape.Opacity = 0.9 * (s.Life / s.MaxLife);
+                s.Shape.Opacity = Math.Min(1.0, 1.4 * (s.Life / s.MaxLife));
             }
         }
 
