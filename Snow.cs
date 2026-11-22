@@ -142,6 +142,9 @@ namespace DesktopSnow
         readonly List<Ellipse> _treeBulbs = new List<Ellipse>();
         readonly List<Color> _treeBulbColors = new List<Color>();
         readonly List<Sparkle> _sparkles = new List<Sparkle>();
+        readonly List<WindStreak> _streaks = new List<WindStreak>();
+        readonly List<WindSwirl> _swirls = new List<WindSwirl>();
+        double _windFxTimer = 0.5;
         SWF.NotifyIcon _tray;
         SWF.MenuItem _miAutostart;
         SWF.MenuItem _miScreensaver;
@@ -264,6 +267,32 @@ namespace DesktopSnow
             public double Life;
             public double MaxLife;
             public Ellipse Shape;
+        }
+
+        class WindStreak
+        {
+            public double X;
+            public double Y0;
+            public double Sway;
+            public double Phase;
+            public double Vx;
+            public double Life;
+            public double MaxLife;
+            public Rectangle Shape;
+        }
+
+        class WindSwirl
+        {
+            public double X;
+            public double Y;
+            public double Vx;
+            public double Angle;
+            public double Spin;
+            public double Life;
+            public double MaxLife;
+            public readonly List<Ellipse> Parts = new List<Ellipse>();
+            public readonly List<double> Rads = new List<double>();
+            public readonly List<double> Angles = new List<double>();
         }
 
         class Flake
@@ -916,6 +945,19 @@ namespace DesktopSnow
             }
             _gustPower += (_gustTarget - _gustPower) * Math.Min(1.0, dt * 1.5);
             _wind += _gustPower;
+
+            _windFxTimer -= dt;
+            bool gusting = Math.Abs(_gustPower) > 60.0;
+            if (_windFxTimer <= 0.0)
+            {
+                _windFxTimer = 0.05 + _rng.NextDouble() * 0.08;
+                if (gusting && _canvas != null)
+                {
+                    SpawnWindStreak();
+                    if (_rng.NextDouble() < 0.12 && _swirls.Count < 4) SpawnWindSwirl();
+                }
+            }
+            UpdateWindFx(dt);
 
             double flakeSpawnChance = (_gustLeft > 0.0) ? 0.75 : 0.4;
             if (_flakes.Count < _targetCount && _rng.NextDouble() < flakeSpawnChance) AddFlake(false);
@@ -2248,6 +2290,110 @@ namespace DesktopSnow
             Canvas.SetTop(e, s.Y);
             _sparkles.Add(s);
             _canvas.Children.Add(e);
+        }
+
+        void SpawnWindStreak()
+        {
+            double dir = Math.Sign(_gustPower);
+            WindStreak s = new WindStreak();
+            s.MaxLife = 0.8 + _rng.NextDouble() * 0.8;
+            s.Life = s.MaxLife;
+            double hb = (_groundY > 0.0) ? _groundY : H();
+            s.Y0 = hb - 40.0 - _rng.NextDouble() * (hb * 0.45);
+            s.Vx = dir * (380.0 + _rng.NextDouble() * 220.0);
+            s.Sway = 4.0 + _rng.NextDouble() * 10.0;
+            s.Phase = _rng.NextDouble() * Math.PI * 2.0;
+            s.X = (dir > 0) ? -140.0 : W() + 140.0;
+            Rectangle r = new Rectangle
+            {
+                Width = 40.0 + _rng.NextDouble() * 60.0,
+                Height = 2.0,
+                RadiusX = 1.0,
+                RadiusY = 1.0,
+                Fill = new SolidColorBrush(Color.FromRgb(255, 255, 255))
+            };
+            r.Opacity = 0.0;
+            s.Shape = r;
+            System.Windows.Controls.Panel.SetZIndex(r, 58);
+            _streaks.Add(s);
+            _canvas.Children.Add(r);
+        }
+
+        void SpawnWindSwirl()
+        {
+            double dir = Math.Sign(_gustPower);
+            WindSwirl w = new WindSwirl();
+            w.MaxLife = 1.6 + _rng.NextDouble() * 1.2;
+            w.Life = w.MaxLife;
+            double hb = (_groundY > 0.0) ? _groundY : H();
+            w.Y = hb - 60.0 - _rng.NextDouble() * (hb * 0.3);
+            w.Vx = dir * (240.0 + _rng.NextDouble() * 160.0);
+            w.Angle = _rng.NextDouble() * Math.PI * 2.0;
+            w.Spin = dir * (4.5 + _rng.NextDouble() * 3.0);
+            w.X = (dir > 0) ? -60.0 : W() + 60.0;
+            for (int i = 0; i < 9; i++)
+            {
+                Ellipse p = new Ellipse
+                {
+                    Width = 1.6 + _rng.NextDouble() * 1.6,
+                    Height = 1.6 + _rng.NextDouble() * 1.6,
+                    Fill = new SolidColorBrush(Color.FromRgb(255, 255, 255))
+                };
+                p.Opacity = 0.0;
+                w.Parts.Add(p);
+                w.Rads.Add(4.0 + _rng.NextDouble() * 16.0);
+                w.Angles.Add(i * Math.PI * 2.0 / 9.0 + _rng.NextDouble() * 0.8);
+                _canvas.Children.Add(p);
+            }
+            _swirls.Add(w);
+        }
+
+        void UpdateWindFx(double dt)
+        {
+            for (int i = _streaks.Count - 1; i >= 0; i--)
+            {
+                WindStreak s = _streaks[i];
+                s.Life -= dt;
+                s.X += s.Vx * dt;
+                s.Phase += dt * 3.5;
+                double age = s.MaxLife - s.Life;
+                double op = 0.22 * Math.Min(1.0, age / (s.MaxLife * 0.2)) * Math.Min(1.0, s.Life / (s.MaxLife * 0.45));
+                if (s.Life <= 0.0 || s.X < -160.0 || s.X > W() + 160.0)
+                {
+                    RemoveShape(s.Shape);
+                    _streaks.RemoveAt(i);
+                    continue;
+                }
+                s.Shape.Opacity = Math.Max(0.0, op);
+                s.Shape.Height = 1.6 + Math.Abs(Math.Sin(s.Phase)) * 1.6;
+                Canvas.SetLeft(s.Shape, s.X);
+                Canvas.SetTop(s.Shape, s.Y0 + Math.Sin(s.Phase) * s.Sway);
+            }
+
+            for (int i = _swirls.Count - 1; i >= 0; i--)
+            {
+                WindSwirl w = _swirls[i];
+                w.Life -= dt;
+                w.X += w.Vx * dt;
+                w.Angle += w.Spin * dt;
+                double age2 = w.MaxLife - w.Life;
+                double op2 = 0.3 * Math.Min(1.0, age2 / (w.MaxLife * 0.25)) * Math.Min(1.0, w.Life / (w.MaxLife * 0.4));
+                if (w.Life <= 0.0 || (w.Vx > 0 && w.X > W() + 120.0) || (w.Vx < 0 && w.X < -120.0))
+                {
+                    for (int p = 0; p < w.Parts.Count; p++) RemoveShape(w.Parts[p]);
+                    _swirls.RemoveAt(i);
+                    continue;
+                }
+                for (int p = 0; p < w.Parts.Count; p++)
+                {
+                    double ang = w.Angles[p] + w.Angle;
+                    double px = w.X + Math.Cos(ang) * w.Rads[p];
+                    double py = w.Y + Math.Sin(ang) * w.Rads[p] * 0.45;
+                    w.Parts[p].Opacity = Math.Max(0.0, op2);
+                    Canvas.SetLeft(w.Parts[p], px);
+                    Canvas.SetTop(w.Parts[p], py);
+                }
+            }
         }
 
         void UpdateSparkles(double dt)
