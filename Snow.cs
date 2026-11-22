@@ -621,8 +621,8 @@ namespace DesktopSnow
         void SetupTray()
         {
             _miAutostart = new SWF.MenuItem("Включён вместе с ПК (автозапуск)", OnClickAutostart);
-            _miScreensaver = new SWF.MenuItem("Скринсейвер: снег поверх всех окон", OnClickScreensaver);
-            _miIcons = new SWF.MenuItem("Эксперимент: снег за иконками", OnClickBehindIcons);
+            _miScreensaver = new SWF.MenuItem("Эффекты поверх всех окон", OnClickScreensaver);
+            _miIcons = new SWF.MenuItem("Эффекты за иконками (эксперимент)", OnClickBehindIcons);
 
             SWF.ContextMenu menu = new SWF.ContextMenu();
             menu.MenuItems.Add(_miScreensaver);
@@ -632,9 +632,9 @@ namespace DesktopSnow
                 if (!_trainActive) SpawnTrain();
             }));
             menu.MenuItems.Add(new SWF.MenuItem("Салют!", delegate { SpawnRocket(); SpawnRocket(); SpawnRocket(); }));
-            menu.MenuItems.Add(new SWF.MenuItem("Больше снега", delegate { _targetCount += 80; TrimFlakes(); }));
-            menu.MenuItems.Add(new SWF.MenuItem("Меньше снега", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
-            menu.MenuItems.Add(new SWF.MenuItem("Убрать весь снег", delegate { ClearAllSnow(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("Больше эффектов", delegate { _targetCount += 80; TrimFlakes(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("Меньше эффектов", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("Убрать все эффекты", delegate { ClearAllSnow(); }));
             menu.MenuItems.Add(new SWF.MenuItem("\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438...", delegate
             {
                 Dispatcher.BeginInvoke((Action)delegate { ShowSettingsWindow(); });
@@ -650,7 +650,7 @@ namespace DesktopSnow
 
             _tray = new SWF.NotifyIcon();
             _tray.Icon = MakeIcon();
-            _tray.Text = "DesktopSnow — снег на рабочем столе";
+            _tray.Text = "DesktopSnow — эффекты на рабочем столе";
             _tray.ContextMenu = menu;
             _tray.Visible = true;
             SyncTrayCheckState();
@@ -774,7 +774,7 @@ namespace DesktopSnow
         {
             if (_season == Season.Spring) return Color.FromRgb(255, 233, 245);
             if (_season == Season.Summer) return Color.FromArgb(150, 138, 188, 238);
-            if (_season == Season.Autumn) return Color.FromRgb(222, 172, 96);
+            if (_season == Season.Autumn) return Color.FromArgb(170, 104, 66, 36);
             return Color.FromRgb(245, 250, 255);
         }
 
@@ -782,7 +782,7 @@ namespace DesktopSnow
         {
             if (_season == Season.Spring) return Color.FromRgb(244, 197, 226);
             if (_season == Season.Summer) return Color.FromArgb(110, 96, 148, 220);
-            if (_season == Season.Autumn) return Color.FromRgb(124, 76, 38);
+            if (_season == Season.Autumn) return Color.FromArgb(200, 54, 32, 18);
             return Color.FromRgb(225, 235, 250);
         }
 
@@ -1624,7 +1624,7 @@ namespace DesktopSnow
                 StackPanel secDen = new StackPanel();
                 Grid.SetRow(secDen, 4);
                 root.Children.Add(secDen);
-                secDen.Children.Add(MakeSectionLabel("\u041f\u041b\u041e\u0422\u041d\u041e\u0421\u0422\u042c \u0421\u041d\u0415\u0413\u0410"));
+                secDen.Children.Add(MakeSectionLabel("\u041f\u041b\u041e\u0422\u041d\u041e\u0421\u0422\u042c \u042d\u0424\u0424\u0415\u041a\u0422\u041e\u0412"));
 
                 TextBlock denLabel = new TextBlock();
                 denLabel.Text = "\u041f\u043b\u043e\u0442\u043d\u043e\u0441\u0442\u044c: " + _targetCount;
@@ -1689,7 +1689,7 @@ namespace DesktopSnow
                 SpawnRocket();
                 SpawnRocket();
             }));
-            ugA.Children.Add(MakeActionButton("\u0423\u0431\u0440\u0430\u0442\u044c \u0432\u0435\u0441\u044c \u0441\u043d\u0435\u0433", delegate
+            ugA.Children.Add(MakeActionButton("\u0423\u0431\u0440\u0430\u0442\u044c \u0432\u0441\u0435 \u044d\u0444\u0444\u0435\u043a\u0442\u044b", delegate
             {
                 ClearAllSnow();
             }));
@@ -3063,6 +3063,13 @@ namespace DesktopSnow
                         {
                             if (IsRoofOccluded(r, f.X)) continue;
                             DepositRoof(r, f.X, f.R * 5.0);
+                            if (_season == Season.Autumn && _decos.Count < 380)
+                            {
+                                int li = (int)((f.X - r.L) / _driftSegment);
+                                if (li < 0) li = 0;
+                                if (li >= r.Depths.Length) li = r.Depths.Length - 1;
+                                SpawnLeafDecoAt(f.X, r.T - r.Depths[li] + _rng.NextDouble() * 2.5, true, r, f.Tint);
+                            }
                             roofLanded = true;
                             break;
                         }
@@ -3082,6 +3089,10 @@ namespace DesktopSnow
                     else
                     {
                         DepositSnow(f.X, f.R * 5.0);
+                        if (_season == Season.Autumn && _decos.Count < 380)
+                        {
+                            SpawnLeafDecoAt(f.X, _groundY - _depths[DriftIndexFor(f.X)] - 1.0 + _rng.NextDouble() * 2.5, false, null, f.Tint);
+                        }
                     }
                     roofLanded = true;
                 }
@@ -4580,28 +4591,30 @@ namespace DesktopSnow
         {
             if (_canvas == null || _roofCanvas == null) return;
             bool onRoof = _roofs.Count > 0 && _rng.NextDouble() < 0.55;
-            DriftDeco d = new DriftDeco();
-            double x, y;
             if (onRoof)
             {
                 Roof rr = _roofs[_rng.Next(_roofs.Count)];
                 if (rr.Depths == null || rr.Depths.Length < 4) return;
                 int idx = _rng.Next(rr.Depths.Length);
                 if (rr.Depths[idx] < 2.5) return;
-                x = rr.L + idx * _driftSegment + _rng.NextDouble() * _driftSegment;
-                y = rr.T - rr.Depths[idx] + _rng.NextDouble() * 4.0 - 1.5;
-                d.Ref = rr;
-                d.OnRoof = true;
+                double x = rr.L + idx * _driftSegment + _rng.NextDouble() * _driftSegment;
+                double y = rr.T - rr.Depths[idx] + _rng.NextDouble() * 4.0 - 1.5;
+                SpawnLeafDecoAt(x, y, true, rr, PickLeafTint());
             }
             else
             {
                 if (_depths == null || _groundY <= 0.0) return;
-                x = _rng.NextDouble() * W();
+                double x = _rng.NextDouble() * W();
                 int si = DriftIndexFor(x);
                 if (_depths[si] < 2.5) return;
                 x += _rng.NextDouble() * _driftSegment - _driftSegment * 0.5;
-                y = _groundY - _depths[si] + _rng.NextDouble() * 4.0 - 1.5;
+                double y = _groundY - _depths[si] + _rng.NextDouble() * 4.0 - 1.5;
+                SpawnLeafDecoAt(x, y, false, null, PickLeafTint());
             }
+        }
+
+        Color PickLeafTint()
+        {
             Color[] pal = new Color[] {
                 Color.FromRgb(190, 58, 36),
                 Color.FromRgb(222, 128, 48),
@@ -4612,34 +4625,35 @@ namespace DesktopSnow
                 Color.FromRgb(128, 72, 36),
                 Color.FromRgb(216, 108, 58)
             };
-            double w = 5.0 + _rng.NextDouble() * 4.5;
-            double h = w * (0.5 + _rng.NextDouble() * 0.25);
-            Polygon leaf = new Polygon();
-            leaf.Fill = new SolidColorBrush(pal[_rng.Next(pal.Length)]);
-            double a = _rng.NextDouble() * Math.PI * 2.0;
-            double ca = Math.Cos(a), sa = Math.Sin(a);
-            double hw = w * 0.5, hh = h * 0.5;
-            Point c0 = new Point(-hw, 0.0);
-            Point c1 = new Point(0.0, -hh);
-            Point c2 = new Point(hw, 0.0);
-            Point c3 = new Point(0.0, hh);
-            leaf.Points = new PointCollection(new Point[] {
-                new Point(x + c0.X * ca - c0.Y * sa, y + c0.X * sa + c0.Y * ca),
-                new Point(x + c1.X * ca - c1.Y * sa, y + c1.X * sa + c1.Y * ca),
-                new Point(x + c2.X * ca - c2.Y * sa, y + c2.X * sa + c2.Y * ca),
-                new Point(x + c3.X * ca - c3.Y * sa, y + c3.X * sa + c3.Y * ca)
-            });
-            leaf.Opacity = 0.0;
+            return pal[_rng.Next(pal.Length)];
+        }
+
+        void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint)
+        {
+            if (_canvas == null || _roofCanvas == null) return;
+            if (_decos.Count >= 380) return;
+            DriftDeco d = new DriftDeco();
+            Color light = Color.FromRgb(
+                (byte)Math.Min(255, tint.R + 45),
+                (byte)Math.Min(255, tint.G + 45),
+                (byte)Math.Min(255, tint.B + 45));
+            Ellipse leaf = new Ellipse { Width = 9.0 + _rng.NextDouble() * 4.0, Height = 5.4 + _rng.NextDouble() * 2.4 };
+            leaf.Fill = new LinearGradientBrush(light, tint, 45.0);
+            leaf.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
+            leaf.StrokeThickness = 0.6;
+            leaf.RenderTransform = new RotateTransform(_rng.NextDouble() * 360.0);
+            leaf.Opacity = 0.7 + _rng.NextDouble() * 0.3;
             d.Shape = leaf;
             d.X = x;
             d.Y = y;
+            d.Ref = refRoof;
+            d.OnRoof = onRoof;
             d.MaxLife = -1.0;
             d.Life = -1.0;
-            leaf.Opacity = 0.55 + _rng.NextDouble() * 0.45;
             System.Windows.Controls.Panel.SetZIndex(leaf, 56);
-            Canvas.SetLeft(leaf, 0.0);
-            Canvas.SetTop(leaf, 0.0);
-            if (d.OnRoof) _roofCanvas.Children.Add(leaf);
+            Canvas.SetLeft(leaf, x - leaf.Width * 0.5);
+            Canvas.SetTop(leaf, y - leaf.Height * 0.5);
+            if (onRoof) _roofCanvas.Children.Add(leaf);
             else _canvas.Children.Add(leaf);
             _decos.Add(d);
         }
