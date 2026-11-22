@@ -2382,8 +2382,8 @@ namespace DesktopSnow
                 Canvas.SetTop(e, craters[i][1]);
                 _moon.Children.Add(e);
             }
-            Canvas.SetLeft(_moon, W() * 0.74);
-            Canvas.SetTop(_moon, H() * 0.13);
+            Canvas.SetLeft(_moon, W() - 148.0);
+            Canvas.SetTop(_moon, 34.0);
             System.Windows.Controls.Panel.SetZIndex(_moon, -4);
             _canvas.Children.Add(_moon);
         }
@@ -2434,10 +2434,10 @@ namespace DesktopSnow
             tail.EndPoint = new Point(0.5, 0.5);
             tail.StartPoint = new Point(0, 0);
             tail.EndPoint = new Point(1, 1);
-            tail.GradientStops.Add(new GradientStop(Color.FromArgb(230, 255, 255, 255), 0.0));
-            tail.GradientStops.Add(new GradientStop(Color.FromArgb(0, 190, 210, 255), 1.0));
+            tail.GradientStops.Add(new GradientStop(Color.FromArgb(240, 255, 244, 170), 0.0));
+            tail.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 225, 120), 1.0));
             ln.Stroke = tail;
-            ln.StrokeThickness = 2.4;
+            ln.StrokeThickness = 2.6;
             s.Shape = ln;
             System.Windows.Controls.Panel.SetZIndex(ln, 79);
             Canvas.SetLeft(ln, s.X);
@@ -2456,7 +2456,10 @@ namespace DesktopSnow
                 s.Y += s.Vy * dt;
                 Canvas.SetLeft(s.Shape, s.X);
                 Canvas.SetTop(s.Shape, s.Y);
-                StarTrail(s.X, s.Y, Color.FromRgb(210, 225, 255));
+                StarTrail(s.X, s.Y, Color.FromRgb(255, 226, 130));
+                StarTrail(s.X + (_rng.NextDouble() - 0.5) * 18.0, s.Y - _rng.NextDouble() * 10.0, Color.FromRgb(255, 244, 180));
+                if (_rng.NextDouble() < 0.5)
+                    StarTrail(s.X + (_rng.NextDouble() - 0.5) * 24.0, s.Y - _rng.NextDouble() * 14.0, Color.FromRgb(255, 200, 90));
                 if (s.Life <= 0.0 || s.X < -80.0 || s.X > W() + 80.0 || s.Y > H())
                 {
                     RemoveShape(s.Shape);
@@ -2508,10 +2511,13 @@ namespace DesktopSnow
         void FireworkBurst(double cx, double cy)
         {
             if (_canvas == null) return;
-            Color baseC = Color.FromRgb(
-                (byte)(150 + _rng.Next(105)),
-                (byte)(150 + _rng.Next(105)),
-                (byte)(150 + _rng.Next(105)));
+            Color[] palette = new Color[]
+            {
+                Color.FromRgb(235, 60, 55), Color.FromRgb(250, 200, 45),
+                Color.FromRgb(60, 130, 245), Color.FromRgb(55, 200, 85),
+                Color.FromRgb(245, 120, 40), Color.FromRgb(225, 70, 200),
+                Color.FromRgb(90, 220, 235)
+            };
             Confetto flash = new Confetto();
             flash.X = cx - 80.0;
             flash.Y = cy - 80.0;
@@ -2539,9 +2545,9 @@ namespace DesktopSnow
                 c.Vx = Math.Cos(ang) * sp;
                 c.Vy = Math.Sin(ang) * sp * 0.9;
                 c.Life = 0.9 + _rng.NextDouble() * 0.8;
-                Color col = (_rng.NextDouble() < 0.25)
+                Color col = (_rng.NextDouble() < 0.2)
                     ? Color.FromRgb(255, 255, 255)
-                    : baseC;
+                    : palette[_rng.Next(palette.Length)];
                 c.Shape = new Ellipse
                 {
                     Width = 2.4 + _rng.NextDouble() * 1.8,
