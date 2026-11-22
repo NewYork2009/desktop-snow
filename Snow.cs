@@ -51,6 +51,12 @@ namespace DesktopSnow
         [DllImport("user32.dll")] static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int count);
         [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out RECT rect, int size);
         [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr hwnd, int attr, out int value, int size);
+        [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT point);
+        [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+        [DllImport("user32.dll")] static extern IntPtr GetDesktopWindow();
+        [DllImport("user32.dll", CharSet = CharSet.Auto)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int count);
+        [DllImport("user32.dll")] static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint vk);
+        [DllImport("user32.dll")] static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
         [StructLayout(LayoutKind.Sequential)]
         struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
@@ -62,6 +68,11 @@ namespace DesktopSnow
         const int WM_MOUSEMOVE = 0x0200;
         const int WM_LBUTTONDOWN = 0x0201;
         const int WM_LBUTTONUP = 0x0202;
+        const int WM_HOTKEY = 0x0312;
+        const int HOTKEY_ID = 1;
+        const uint HOTKEY_MODS = 0x0002 | 0x0001;
+        const uint HOTKEY_VK_S = 0x53;
+        const uint GA_ROOT = 2;
 
         [StructLayout(LayoutKind.Sequential)]
         struct POINT { public int X; public int Y; }
@@ -392,6 +403,7 @@ namespace DesktopSnow
                 ApplyDesktopOnlyMode();
                 CreateRoofWindow();
                 InstallClickHook();
+                InstallHotkey();
                 SetupTray();
                 EnsureAutostart();
                 StartAnimation();
@@ -658,6 +670,7 @@ namespace DesktopSnow
 
         void Quit()
         {
+            if (_hwnd != IntPtr.Zero) UnregisterHotKey(_hwnd, HOTKEY_ID);
             if (_hook != IntPtr.Zero) UnhookWindowsHookEx(_hook);
             _tray.Visible = false;
             Application.Current.Shutdown();
@@ -677,6 +690,35 @@ namespace DesktopSnow
             }
         }
 
+        void InstallHotkey()
+        {
+            try
+            {
+                HwndSource src = HwndSource.FromHwnd(_hwnd);
+                if (src != null) src.AddHook(WndProcHook);
+                RegisterHotKey(_hwnd, HOTKEY_ID, HOTKEY_MODS, HOTKEY_VK_S);
+                Log("hotkey registered: Ctrl+Alt+S");
+            }
+            catch (Exception ex)
+            {
+                Log("hotkey failed: " + ex.Message);
+            }
+        }
+
+        IntPtr WndProcHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            if (msg == WM_HOTKEY && wParam.ToInt32() == HOTKEY_ID)
+            {
+                Dispatcher.BeginInvoke((Action)delegate
+                {
+                    ClearAllSnow();
+                    Log("hotkey: cleared all snow");
+                });
+                handled = true;
+            }
+            return IntPtr.Zero;
+        }
+
         IntPtr MouseHookProc(int nCode, IntPtr wParam, IntPtr lParam)
         {
             if (nCode >= 0)
@@ -687,7 +729,8 @@ namespace DesktopSnow
                 {
                     double mx = info.pt.X - SystemParameters.VirtualScreenLeft;
                     double my = info.pt.Y - SystemParameters.VirtualScreenTop;
-                    if (_grinchActive && !_grinchDead && _grinch != null)
+                    bool onDesk = ClickOnDesktop(info.pt);
+                    if (onDesk && _grinchActive && !_grinchDead && _grinch != null)
                     {
                         double gl = Canvas.GetLeft(_grinch), gt = Canvas.GetTop(_grinch);
                         if (mx >= gl - 8 && mx <= gl + 72 && my >= gt - 8 && my <= gt + 80)
@@ -696,7 +739,7 @@ namespace DesktopSnow
                             return (IntPtr)1;
                         }
                     }
-                    SnowDrop hit = FindClickableDrop(mx, my);
+                    SnowDrop hit = FindClickableDrop(mx, my, onDesk);
                     if (hit != null)
                     {
                         Dispatcher.BeginInvoke((Action)delegate { PopDrop(hit); });
@@ -704,19 +747,22 @@ namespace DesktopSnow
                     }
                     if (_grabbed == null)
                     {
-                        SnowBall pick = FindBall(mx, my);
-                        if (pick != null)
+                        if (onDesk)
                         {
-                            Dispatcher.BeginInvoke((Action)delegate { GrabBall(pick, mx, my); });
-                            return (IntPtr)1;
+                            SnowBall pick = FindBall(mx, my);
+                            if (pick != null)
+                            {
+                                Dispatcher.BeginInvoke((Action)delegate { GrabBall(pick, mx, my); });
+                                return (IntPtr)1;
+                            }
                         }
-                        SnowDrop tree = FindGrabbableTree(mx, my);
+                        SnowDrop tree = FindGrabbableTree(mx, my, onDesk);
                         if (tree != null)
                         {
                             Dispatcher.BeginInvoke((Action)delegate { GrabTree(tree, mx, my); });
                             return (IntPtr)1;
                         }
-                        if (_ballHeld == null && InSnowZone(mx, my))
+                        if (onDesk && _ballHeld == null && InSnowZone(mx, my))
                         {
                             Dispatcher.BeginInvoke((Action)delegate { StartBall(mx, my); });
                             return (IntPtr)1;
@@ -749,12 +795,32 @@ namespace DesktopSnow
             return CallNextHookEx(_hook, nCode, wParam, lParam);
         }
 
-        SnowDrop FindClickableDrop(double mx, double my)
+        bool ClickOnDesktop(POINT pt)
+        {
+            try
+            {
+                IntPtr h = WindowFromPoint(pt);
+                if (h == IntPtr.Zero) return true;
+                h = GetAncestor(h, GA_ROOT);
+                if (h == IntPtr.Zero || h == GetDesktopWindow()) return true;
+                System.Text.StringBuilder sb = new System.Text.StringBuilder(64);
+                GetClassName(h, sb, 64);
+                string cls = sb.ToString();
+                return cls == "Progman" || cls == "WorkerW";
+            }
+            catch (Exception)
+            {
+                return true;
+            }
+        }
+
+        SnowDrop FindClickableDrop(double mx, double my, bool onDesk)
         {
             for (int i = 0; i < _drops.Count; i++)
             {
                 SnowDrop d = _drops[i];
                 if (d.Popped || d.IsTree || !d.Stuck) continue;
+                if (!onDesk && d.RoofHwnd == IntPtr.Zero) continue;
                 double l = Canvas.GetLeft(d.Shape), t = Canvas.GetTop(d.Shape);
                 if (mx >= l - 8 && mx <= l + d.Shape.Width + 8 && my >= t - 8 && my <= t + d.Shape.Height + 8)
                 {
@@ -764,12 +830,13 @@ namespace DesktopSnow
             return null;
         }
 
-        SnowDrop FindGrabbableTree(double mx, double my)
+        SnowDrop FindGrabbableTree(double mx, double my, bool onDesk)
         {
             for (int i = 0; i < _drops.Count; i++)
             {
                 SnowDrop d = _drops[i];
                 if (!d.IsTree || d.Popped || d.Held || !d.Stuck) continue;
+                if (!onDesk && d.RoofHwnd == IntPtr.Zero) continue;
                 double l = Canvas.GetLeft(d.Shape), t = Canvas.GetTop(d.Shape);
                 if (mx >= l - 8 && mx <= l + d.Shape.Width + 8 && my >= t - 8 && my <= t + d.Shape.Height + 8)
                 {
