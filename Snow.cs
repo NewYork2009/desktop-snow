@@ -2310,17 +2310,19 @@ namespace DesktopSnow
             {
                 SnowBall s2 = _balls[i];
                 if (s2 == b || !s2.Standing) continue;
-                if (Math.Abs((s2.X + s2.R) - cx) < s2.R * 0.8)
+                double d = Math.Abs((s2.X + s2.R) - cx);
+                if (d >= Math.Max(s2.R * 0.8, b.R * 0.8)) continue;
+                if (support == null || s2.Level > support.Level ||
+                    (s2.Level == support.Level && d < Math.Abs((support.X + support.R) - cx)))
                 {
                     support = s2;
-                    break;
                 }
             }
             if (support != null && support.Level < 2)
             {
                 b.Level = support.Level + 1;
                 b.Under = support;
-                b.X = support.X;
+                b.X = support.X + support.R - b.R;
                 b.Y = support.Y - b.R * 2.0 + b.R * 0.25;
                 if (b.Level == 2 && support.Under != null)
                 {
