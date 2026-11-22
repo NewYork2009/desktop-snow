@@ -2947,12 +2947,12 @@ namespace DesktopSnow
             _decoTimer -= dt;
             if (_decoTimer <= 0.0)
             {
-                _decoTimer = 0.1 + _rng.NextDouble() * 0.15;
-                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 600)
+                _decoTimer = 0.08 + _rng.NextDouble() * 0.12;
+                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 900)
                 {
-                    for (int dk = 0; dk < 4; dk++)
+                    for (int dk = 0; dk < 7; dk++)
                     {
-                        if (_decos.Count >= 380) break;
+                        if (_decos.Count >= 900) break;
                         SpawnDriftDeco();
                     }
                 }
@@ -3063,7 +3063,7 @@ namespace DesktopSnow
                         {
                             if (IsRoofOccluded(r, f.X)) continue;
                             DepositRoof(r, f.X, f.R * 5.0);
-                            if (_season == Season.Autumn && _decos.Count < 600)
+                            if (_season == Season.Autumn && _decos.Count < 900)
                             {
                                 int li = (int)((f.X - r.L) / _driftSegment);
                                 if (li < 0) li = 0;
@@ -3089,7 +3089,7 @@ namespace DesktopSnow
                     else
                     {
                         DepositSnow(f.X, f.R * 5.0);
-                        if (_season == Season.Autumn && _decos.Count < 600)
+                        if (_season == Season.Autumn && _decos.Count < 900)
                         {
                             SpawnLeafDecoAt(f.X, _groundY - _depths[DriftIndexFor(f.X)] - 1.0 + _rng.NextDouble() * 2.5, false, null, f.Tint);
                         }
@@ -4632,10 +4632,10 @@ namespace DesktopSnow
         void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint)
         {
             if (_canvas == null || _roofCanvas == null) return;
-            if (_decos.Count >= 600) return;
+            if (_decos.Count >= 900) return;
             DriftDeco d = new DriftDeco();
-            double w = 11.0 + _rng.NextDouble() * 7.0;
-            double h = w * (0.6 + _rng.NextDouble() * 0.3);
+            double w = 11.0 + _rng.NextDouble() * 5.0;
+            double h = w * (0.55 + _rng.NextDouble() * 0.12);
             if (onRoof && refRoof != null)
             {
                 if (x < refRoof.L + 3.0) x = refRoof.L + 3.0 + _rng.NextDouble() * 4.0;
@@ -4647,31 +4647,16 @@ namespace DesktopSnow
                 if (x < 2.0) x = 2.0 + _rng.NextDouble() * 4.0;
                 if (x > W() - 2.0 - w) x = W() - 2.0 - w - _rng.NextDouble() * 4.0;
             }
-            Polygon leaf = new Polygon();
+            Ellipse leaf = new Ellipse { Width = w, Height = h };
             Color light = Color.FromRgb(
-                (byte)Math.Min(255, tint.R + 50),
-                (byte)Math.Min(255, tint.G + 50),
-                (byte)Math.Min(255, tint.B + 40));
-            leaf.Fill = new LinearGradientBrush(light, tint, 60.0);
-            leaf.Stroke = new SolidColorBrush(Color.FromArgb(150, 70, 36, 16));
-            leaf.StrokeThickness = 0.8;
-            PointCollection pts = new PointCollection();
-            int lobes = 5 + _rng.Next(3);
-            double rot = _rng.NextDouble() * Math.PI * 2.0;
-            double ca = Math.Cos(rot), sa = Math.Sin(rot);
-            for (int i = 0; i < lobes; i++)
-            {
-                double ang = Math.PI * 2.0 * i / lobes;
-                double angn = ang + Math.PI / lobes;
-                double ro = h * (0.55 + _rng.NextDouble() * 0.5);
-                double ri = w * (0.18 + _rng.NextDouble() * 0.12);
-                pts.Add(new Point(x + Math.Cos(ang) * ro * ca - Math.Sin(ang) * ro * sa,
-                                  y - Math.Sin(ang) * ro * ca - Math.Cos(ang) * ro * sa * 0.75));
-                pts.Add(new Point(x + Math.Cos(angn) * ri * ca - Math.Sin(angn) * ri * sa,
-                                  y - Math.Sin(angn) * ri * ca - Math.Cos(angn) * ri * sa * 0.75));
-            }
-            leaf.Points = pts;
-            leaf.Opacity = 0.75 + _rng.NextDouble() * 0.25;
+                (byte)Math.Min(255, tint.R + 45),
+                (byte)Math.Min(255, tint.G + 45),
+                (byte)Math.Min(255, tint.B + 45));
+            leaf.Fill = new LinearGradientBrush(light, tint, 45.0);
+            leaf.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
+            leaf.StrokeThickness = 0.6;
+            leaf.RenderTransform = new RotateTransform(_rng.NextDouble() * 360.0);
+            leaf.Opacity = 0.7 + _rng.NextDouble() * 0.3;
             d.Shape = leaf;
             d.X = x;
             d.Y = y;
