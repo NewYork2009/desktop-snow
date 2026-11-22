@@ -166,6 +166,9 @@ namespace DesktopSnow
         double _santaCheckTimer;
         TransformGroup _trainTf;
         RotateTransform _trainRot;
+        bool _trainDowned;
+        double _trainDownVy;
+        double _trainDownSpin;
         readonly List<SnowDrop> _drops = new List<SnowDrop>();
         readonly List<Confetto> _confetti = new List<Confetto>();
         readonly List<RotateTransform> _legTfs = new List<RotateTransform>();
@@ -745,10 +748,10 @@ namespace DesktopSnow
 
         void KnockDownTrain(double cx, double cy)
         {
-            _canvas.Children.Remove(_train);
-            _train = null;
-            _trainActive = false;
-            _trainRot = null;
+            if (_train == null || _trainDowned) return;
+            _trainDowned = true;
+            _trainDownVy = -260.0;
+            _trainDownSpin = -_trainDir * (260.0 + _rng.NextDouble() * 220.0);
             ConfettiBurst(cx, cy, 40);
             SnowSplash(cx, cy, 20);
             for (int i = 0; i < 4; i++)
@@ -1015,7 +1018,25 @@ namespace DesktopSnow
                 }
             }
 
-            if (_trainActive)
+            if (_trainDowned && _train != null)
+            {
+                _trainDownVy += 1000.0 * dt;
+                _trainX += _trainDir * 140.0 * dt;
+                _trainY += _trainDownVy * dt;
+                Canvas.SetLeft(_train, _trainDir > 0 ? _trainX : _trainX - 170);
+                Canvas.SetTop(_train, _trainY);
+                if (_trainRot != null) _trainRot.Angle += _trainDownSpin * dt;
+                if (_trainY > H() + 300.0)
+                {
+                    _canvas.Children.Remove(_train);
+                    _train = null;
+                    _trainActive = false;
+                    _trainDowned = false;
+                    _trainRot = null;
+                    Log("santa fell off screen");
+                }
+            }
+            else if (_trainActive)
             {
                 _trainX += _trainDir * TrainSpeed * dt;
                 double bobY = _trainY + Math.Sin(_t * 0.9) * 48.0;
@@ -1257,6 +1278,7 @@ namespace DesktopSnow
             Canvas.SetTop(_train, _trainY);
             System.Windows.Controls.Panel.SetZIndex(_train, 70);
             _canvas.Children.Add(_train);
+            _trainDowned = false;
             _trainActive = true;
             Log("santa pass started");
         }
@@ -1625,6 +1647,13 @@ namespace DesktopSnow
             return clip;
         }
 
+        Geometry ComputeDropClipAt(Roof roof, double left, double top)
+        {
+            Geometry g = ComputeDropClip(roof);
+            if (g != null) g.Transform = new TranslateTransform(-left, -top);
+            return g;
+        }
+
         Geometry ComputeRoofClip(Roof roof)
         {
             Rect band = new Rect(roof.L - 8.0, roof.T - 100.0, (roof.R - roof.L) + 16.0, 112.0);
@@ -1780,7 +1809,9 @@ namespace DesktopSnow
             {
                 Confetto c = new Confetto();
                 double side = (_rng.NextDouble() < 0.5) ? -1.0 : 1.0;
-                c.X = x + side * _rng.NextDouble() * 10.0;
+                double px = x + side * _rng.NextDouble() * 10.0;
+                if (roof != null && IsRoofOccluded(roof, px)) continue;
+                c.X = px;
                 c.Y = y - 2.0 - _rng.NextDouble() * 6.0;
                 c.Vx = side * (40.0 + _rng.NextDouble() * 110.0);
                 c.Vy = -40.0 - _rng.NextDouble() * 80.0;
@@ -1795,7 +1826,6 @@ namespace DesktopSnow
                 System.Windows.Controls.Panel.SetZIndex(puff, 80);
                 Canvas.SetLeft(puff, c.X);
                 Canvas.SetTop(puff, c.Y);
-                puff.Clip = (roof != null) ? ComputeDropClip(roof) : null;
                 _confetti.Add(c);
                 _roofCanvas.Children.Add(puff);
             }
@@ -1915,7 +1945,7 @@ namespace DesktopSnow
                     continue;
                 }
                 Roof owner = RoofByHwnd(dr.RoofHwnd);
-                dr.Shape.Clip = (owner != null) ? ComputeDropClip(owner) : null;
+                dr.Shape.Clip = (owner != null) ? ComputeDropClipAt(owner, dr.X, dr.Y) : null;
             }
         }
 
@@ -1974,7 +2004,7 @@ namespace DesktopSnow
             if (prev != null && prev != _roofCanvas) prev.Children.Remove(d.Shape);
             _roofCanvas.Children.Add(d.Shape);
             System.Windows.Controls.Panel.SetZIndex(d.Shape, 55);
-            d.Shape.Clip = ComputeDropClip(roof);
+            d.Shape.Clip = ComputeDropClipAt(roof, d.X, d.Y);
             RoofPuff(d.X + d.Shape.Width / 2.0, roof.T, 8, roof);
         }
 
