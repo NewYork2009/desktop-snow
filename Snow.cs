@@ -441,6 +441,7 @@ namespace DesktopSnow
             public double X;
             public double Y;
             public double Life;
+            public Roof Roof;
             public Ellipse Shape;
         }
 
@@ -3876,6 +3877,7 @@ namespace DesktopSnow
             d.X = ic.X + ic.W * 0.5;
             d.Y = Canvas.GetTop(ic.Shape) + ic.H - 1.0;
             d.Life = 0.6;
+            d.Roof = ic.Roof;
             d.Shape = new Ellipse
             {
                 Width = 2.5,
@@ -3931,8 +3933,13 @@ namespace DesktopSnow
             for (int i = _icicleDrips.Count - 1; i >= 0; i--)
             {
                 IcicleDrip d = _icicleDrips[i];
-                d.Life -= dt;
-                d.Y += 90.0 * dt;
+                bool hidden = d.Roof != null && IsRoofOccluded(d.Roof, d.X);
+                d.Shape.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
+                if (!hidden)
+                {
+                    d.Life -= dt;
+                    d.Y += 90.0 * dt;
+                }
                 if (d.Life <= 0.0 || d.Y > H())
                 {
                     _roofCanvas.Children.Remove(d.Shape);
@@ -3986,7 +3993,15 @@ namespace DesktopSnow
                 }
 
                 RECT e = _enumRects[idx];
+                bool zChanged = r.Z != idx;
                 r.Z = idx;
+                if (zChanged)
+                {
+                    for (int d4 = _decos.Count - 1; d4 >= 0; d4--)
+                    {
+                        if (_decos[d4].OnRoof && _decos[d4].Ref == r) ReanchorDeco(_decos[d4]);
+                    }
+                }
                 double nl = e.Left - SystemParameters.VirtualScreenLeft;
                 double nt = e.Top - SystemParameters.VirtualScreenTop;
                 double wpx = e.Right - e.Left;
@@ -4749,7 +4764,7 @@ namespace DesktopSnow
             {
                 DriftDeco d = _decos[i];
                 if (_season != Season.Autumn && d.Life > 2.0) d.Life = 2.0;
-                if ((_driftTick + i) % 30 == 0 && !ReanchorDeco(d))
+                if ((_driftTick + i) % 10 == 0 && !ReanchorDeco(d))
                 {
                     KillDeco(d, i);
                     continue;
