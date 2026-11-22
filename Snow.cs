@@ -4675,14 +4675,11 @@ namespace DesktopSnow
         Color PickLeafTint()
         {
             Color[] pal = new Color[] {
-                Color.FromRgb(190, 58, 36),
-                Color.FromRgb(222, 128, 48),
-                Color.FromRgb(232, 188, 84),
-                Color.FromRgb(166, 102, 44),
-                Color.FromRgb(104, 118, 48),
-                Color.FromRgb(206, 150, 66),
-                Color.FromRgb(128, 72, 36),
-                Color.FromRgb(216, 108, 58)
+                Color.FromRgb(200, 90, 40),
+                Color.FromRgb(224, 130, 50),
+                Color.FromRgb(240, 180, 60),
+                Color.FromRgb(150, 70, 35),
+                Color.FromRgb(190, 110, 45)
             };
             return pal[_rng.Next(pal.Length)];
         }
