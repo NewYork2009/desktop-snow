@@ -1524,6 +1524,15 @@ namespace DesktopSnow
                 ugA.Columns = 3;
                 secAct.Children.Add(ugA);
 
+                StackPanel secTog = new StackPanel();
+                Grid.SetRow(secTog, 3);
+                root.Children.Add(secTog);
+                secTog.Children.Add(MakeSectionLabel("\u041f\u0415\u0420\u0421\u041e\u041d\u0410\u0416\u0418 \u0418 \u042d\u0424\u0424\u0415\u041a\u0422\u042b"));
+
+                System.Windows.Controls.Primitives.UniformGrid ugT = new System.Windows.Controls.Primitives.UniformGrid();
+                ugT.Columns = 2;
+                secTog.Children.Add(ugT);
+
                 FillSeasonControls(ugA, ugT);
 
                 StackPanel secDen = new StackPanel();
