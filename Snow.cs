@@ -105,6 +105,7 @@ namespace DesktopSnow
         static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
+        const string AppVersion = "0.9.7";
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         const string SettingsKeyPath = "Software\\DesktopSnow";
 
@@ -333,6 +334,8 @@ namespace DesktopSnow
             public double[] Depths;
             public Polygon Poly;
             public int LastMoveTick = -100;
+            public int ClipVer;
+            public double OcclSig = -1.0;
         }
 
         class Confetto
@@ -370,6 +373,7 @@ namespace DesktopSnow
             public double BaseOp;
             public Roof Ref;
             public bool OnRoof;
+            public int ClipVer;
             public FrameworkElement Shape;
         }
 
@@ -502,7 +506,7 @@ namespace DesktopSnow
             try
             {
                 _hwnd = new WindowInteropHelper(this).Handle;
-                Log("program start");
+                Log("program start, version " + AppVersion);
                 ApplyExtendedStyles();
                 ApplyDesktopOnlyMode();
                 CreateRoofWindow();
@@ -659,7 +663,7 @@ namespace DesktopSnow
 
             _tray = new SWF.NotifyIcon();
             _tray.Icon = MakeIcon();
-            _tray.Text = "DesktopSnow — эффекты на рабочем столе";
+            _tray.Text = "DesktopSnow v" + AppVersion + " — эффекты на рабочем столе";
             _tray.ContextMenu = menu;
             _tray.Visible = true;
             SyncTrayCheckState();
@@ -3993,15 +3997,7 @@ namespace DesktopSnow
                 }
 
                 RECT e = _enumRects[idx];
-                bool zChanged = r.Z != idx;
                 r.Z = idx;
-                if (zChanged)
-                {
-                    for (int d4 = _decos.Count - 1; d4 >= 0; d4--)
-                    {
-                        if (_decos[d4].OnRoof && _decos[d4].Ref == r) ReanchorDeco(_decos[d4]);
-                    }
-                }
                 double nl = e.Left - SystemParameters.VirtualScreenLeft;
                 double nt = e.Top - SystemParameters.VirtualScreenTop;
                 double wpx = e.Right - e.Left;
@@ -4024,6 +4020,23 @@ namespace DesktopSnow
                     r.B = r.T + (e.Bottom - e.Top);
                     if (r.Depths == null)
                         r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
+                }
+                double sig = idx * 17.0 + r.L + r.T * 2.0 + r.R * 3.0 + r.T;
+                for (int k = 0; k < _enumList.Count && k < idx; k++)
+                {
+                    RECT oc = _enumRects[k];
+                    double wl = oc.Left - SystemParameters.VirtualScreenLeft;
+                    double wr = oc.Right - SystemParameters.VirtualScreenLeft;
+                    double wt = oc.Top - SystemParameters.VirtualScreenTop;
+                    double wb = oc.Bottom - SystemParameters.VirtualScreenTop;
+                    if (wl >= r.R || wr <= r.L) continue;
+                    if (wt >= r.T + 48.0 || wb <= r.T - 100.0) continue;
+                    sig += k * 131.0 + oc.Left + oc.Top * 2.0 + oc.Right * 3.0 + oc.Bottom * 5.0;
+                }
+                if (sig != r.OcclSig)
+                {
+                    r.OcclSig = sig;
+                    r.ClipVer++;
                 }
             }
 
@@ -4672,6 +4685,7 @@ namespace DesktopSnow
                 int idx = _rng.Next(rr.Depths.Length);
                 if (rr.Depths[idx] < 2.5) return;
                 double x = rr.L + idx * _driftSegment + _rng.NextDouble() * _driftSegment;
+                if (IsRoofOccluded(rr, x)) return;
                 double y = rr.T - rr.Depths[idx] + _rng.NextDouble() * 4.0 - 1.5;
                 SpawnLeafDecoAt(x, y, true, rr, PickLeafTint(), rr.T - rr.Depths[idx]);
             }
@@ -4764,7 +4778,8 @@ namespace DesktopSnow
             {
                 DriftDeco d = _decos[i];
                 if (_season != Season.Autumn && d.Life > 2.0) d.Life = 2.0;
-                if ((_driftTick + i) % 10 == 0 && !ReanchorDeco(d))
+                bool clipStale = d.OnRoof && d.Ref != null && d.Ref.ClipVer != d.ClipVer;
+                if (((_driftTick + i) % 10 == 0 || clipStale) && !ReanchorDeco(d))
                 {
                     KillDeco(d, i);
                     continue;
@@ -4812,6 +4827,7 @@ namespace DesktopSnow
                 Geometry g = ComputeRoofClip(d.Ref);
                 if (g != null) g.Transform = new TranslateTransform(d.W2 - d.X, d.H2 - d.Y);
                 d.Shape.Clip = g;
+                d.ClipVer = d.Ref.ClipVer;
             }
             return true;
         }
