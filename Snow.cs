@@ -2176,6 +2176,7 @@ namespace DesktopSnow
                     if (tilt > 60.0 && !_grinchLanded)
                     {
                         _grinchLanded = true;
+                        System.Windows.Controls.Panel.SetZIndex(_grinch, 45);
                         SnowSplash(_grinchX + w / 2.0, landY, 16);
                         _grinchSlide = _grinchDir * 95.0;
                         if (_grinchSteals > 0)
