@@ -774,7 +774,7 @@ namespace DesktopSnow
         {
             if (_season == Season.Spring) return Color.FromRgb(255, 233, 245);
             if (_season == Season.Summer) return Color.FromArgb(150, 138, 188, 238);
-            if (_season == Season.Autumn) return Color.FromRgb(216, 158, 86);
+            if (_season == Season.Autumn) return Color.FromRgb(222, 172, 96);
             return Color.FromRgb(245, 250, 255);
         }
 
@@ -782,7 +782,7 @@ namespace DesktopSnow
         {
             if (_season == Season.Spring) return Color.FromRgb(244, 197, 226);
             if (_season == Season.Summer) return Color.FromArgb(110, 96, 148, 220);
-            if (_season == Season.Autumn) return Color.FromRgb(150, 96, 48);
+            if (_season == Season.Autumn) return Color.FromRgb(124, 76, 38);
             return Color.FromRgb(225, 235, 250);
         }
 
@@ -2947,8 +2947,15 @@ namespace DesktopSnow
             _decoTimer -= dt;
             if (_decoTimer <= 0.0)
             {
-                _decoTimer = 0.25 + _rng.NextDouble() * 0.4;
-                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 110) SpawnDriftDeco();
+                _decoTimer = 0.1 + _rng.NextDouble() * 0.15;
+                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 380)
+                {
+                    for (int dk = 0; dk < 4; dk++)
+                    {
+                        if (_decos.Count >= 380) break;
+                        SpawnDriftDeco();
+                    }
+                }
             }
             UpdateDecos(dt);
             UpdateSparkles(dt);
@@ -4582,7 +4589,7 @@ namespace DesktopSnow
                 int idx = _rng.Next(rr.Depths.Length);
                 if (rr.Depths[idx] < 2.5) return;
                 x = rr.L + idx * _driftSegment + _rng.NextDouble() * _driftSegment;
-                y = rr.T - rr.Depths[idx] + _rng.NextDouble() * 2.0 - 1.0;
+                y = rr.T - rr.Depths[idx] + _rng.NextDouble() * 4.0 - 1.5;
                 d.Ref = rr;
                 d.OnRoof = true;
             }
@@ -4593,21 +4600,23 @@ namespace DesktopSnow
                 int si = DriftIndexFor(x);
                 if (_depths[si] < 2.5) return;
                 x += _rng.NextDouble() * _driftSegment - _driftSegment * 0.5;
-                y = _groundY - _depths[si] + _rng.NextDouble() * 2.0 - 1.0;
+                y = _groundY - _depths[si] + _rng.NextDouble() * 4.0 - 1.5;
             }
             Color[] pal = new Color[] {
-                Color.FromRgb(178, 104, 44),
-                Color.FromRgb(204, 136, 58),
-                Color.FromRgb(232, 178, 96),
-                Color.FromRgb(148, 92, 46),
-                Color.FromRgb(118, 132, 56),
-                Color.FromRgb(160, 118, 52)
+                Color.FromRgb(190, 58, 36),
+                Color.FromRgb(222, 128, 48),
+                Color.FromRgb(232, 188, 84),
+                Color.FromRgb(166, 102, 44),
+                Color.FromRgb(104, 118, 48),
+                Color.FromRgb(206, 150, 66),
+                Color.FromRgb(128, 72, 36),
+                Color.FromRgb(216, 108, 58)
             };
-            double w = 4.0 + _rng.NextDouble() * 4.0;
-            double h = w * (0.55 + _rng.NextDouble() * 0.25);
+            double w = 5.0 + _rng.NextDouble() * 4.5;
+            double h = w * (0.5 + _rng.NextDouble() * 0.25);
             Polygon leaf = new Polygon();
             leaf.Fill = new SolidColorBrush(pal[_rng.Next(pal.Length)]);
-            double a = _rng.NextDouble() * Math.PI;
+            double a = _rng.NextDouble() * Math.PI * 2.0;
             double ca = Math.Cos(a), sa = Math.Sin(a);
             double hw = w * 0.5, hh = h * 0.5;
             Point c0 = new Point(-hw, 0.0);
@@ -4624,8 +4633,9 @@ namespace DesktopSnow
             d.Shape = leaf;
             d.X = x;
             d.Y = y;
-            d.MaxLife = 5.0 + _rng.NextDouble() * 6.0;
-            d.Life = d.MaxLife;
+            d.MaxLife = -1.0;
+            d.Life = -1.0;
+            leaf.Opacity = 0.55 + _rng.NextDouble() * 0.45;
             System.Windows.Controls.Panel.SetZIndex(leaf, 56);
             Canvas.SetLeft(leaf, 0.0);
             Canvas.SetTop(leaf, 0.0);
@@ -4639,19 +4649,49 @@ namespace DesktopSnow
             for (int i = _decos.Count - 1; i >= 0; i--)
             {
                 DriftDeco d = _decos[i];
+                if (_season != Season.Autumn && d.Life < 0.0)
+                {
+                    d.MaxLife = 0.7;
+                    d.Life = 0.7;
+                }
                 bool gone = false;
-                if (d.OnRoof && d.Ref != null && d.Ref.Depths == null) gone = true;
-                d.Life -= dt;
-                if (d.Life <= 0.0) gone = true;
+                if (d.Life < 0.0)
+                {
+                    if (DepthAtDeco(d) < 1.5) gone = true;
+                }
+                else
+                {
+                    d.Life -= dt;
+                    if (d.Life <= 0.0)
+                    {
+                        gone = true;
+                    }
+                    else
+                    {
+                        double fade = Math.Min(1.0, (d.MaxLife - d.Life) / 0.35);
+                        fade = Math.Min(fade, d.Life / 0.35);
+                        d.Shape.Opacity = 0.9 * Math.Max(0.0, fade);
+                    }
+                }
                 if (gone)
                 {
                     KillDeco(d, i);
                     continue;
                 }
-                double fade = Math.Min(1.0, (d.MaxLife - d.Life) / 0.6);
-                fade = Math.Min(fade, d.Life / 1.2);
-                d.Shape.Opacity = 0.9 * Math.Max(0.0, fade);
             }
+        }
+
+        double DepthAtDeco(DriftDeco d)
+        {
+            if (d.OnRoof)
+            {
+                if (d.Ref == null || d.Ref.Depths == null) return 0.0;
+                int idx = (int)((d.X - d.Ref.L) / _driftSegment);
+                if (idx < 0 || idx >= d.Ref.Depths.Length) return 0.0;
+                return d.Ref.Depths[idx];
+            }
+            if (_depths == null || _groundY <= 0.0) return 0.0;
+            return _depths[DriftIndexFor(d.X)];
         }
 
         void KillDeco(DriftDeco d, int i)
