@@ -132,6 +132,16 @@ namespace DesktopSnow
         readonly List<Flake> _flakes = new List<Flake>();
         double _t;
         double _wind;
+        double _gustPower;
+        double _gustTarget;
+        double _gustTimer = 18.0;
+        double _gustLeft;
+        bool _gustEnabled = true;
+        double _sparkleTimer = 0.4;
+        int _bulbPhase = 0;
+        readonly List<Ellipse> _treeBulbs = new List<Ellipse>();
+        readonly List<Color> _treeBulbColors = new List<Color>();
+        readonly List<Sparkle> _sparkles = new List<Sparkle>();
         SWF.NotifyIcon _tray;
         SWF.MenuItem _miAutostart;
         SWF.MenuItem _miScreensaver;
@@ -159,6 +169,7 @@ namespace DesktopSnow
         const double TrainSpeed = 230.0;
         double _dropTimer;
         double _santaCheckTimer;
+        SWF.MenuItem _miGust;
         TransformGroup _trainTf;
         RotateTransform _trainRot;
         readonly List<SnowDrop> _drops = new List<SnowDrop>();
@@ -244,6 +255,15 @@ namespace DesktopSnow
             public double Vy;
             public double Life;
             public FrameworkElement Shape;
+        }
+
+        class Sparkle
+        {
+            public double X;
+            public double Y;
+            public double Life;
+            public double MaxLife;
+            public Ellipse Shape;
         }
 
         class Flake
@@ -412,6 +432,8 @@ namespace DesktopSnow
             _miAutostart = new SWF.MenuItem("Включён вместе с ПК (автозапуск)", OnClickAutostart);
             _miScreensaver = new SWF.MenuItem("Скринсейвер: снег поверх всех окон", OnClickScreensaver);
             _miIcons = new SWF.MenuItem("Эксперимент: снег за иконками", OnClickBehindIcons);
+            _miGust = new SWF.MenuItem("Метель (порывы ветра)", OnClickGust);
+            _miGust.Checked = true;
 
             SWF.ContextMenu menu = new SWF.ContextMenu();
             menu.MenuItems.Add(_miScreensaver);
@@ -422,6 +444,8 @@ namespace DesktopSnow
             }));
             menu.MenuItems.Add(new SWF.MenuItem("Больше снега", delegate { _targetCount += 80; TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Меньше снега", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
+            menu.MenuItems.Add(_miGust);
+            menu.MenuItems.Add(new SWF.MenuItem("Убрать весь снег", delegate { ClearAllSnow(); }));
             menu.MenuItems.Add(new SWF.MenuItem("-"));
             menu.MenuItems.Add(new SWF.MenuItem("Диагностика (открыть лог)", delegate
             {
@@ -484,6 +508,23 @@ namespace DesktopSnow
             }
             Log("mode -> " + _mode + ", behindIcons: " + _attachedBehindIcons);
             SyncTrayCheckState();
+        }
+
+        void OnClickGust(object sender, EventArgs e)
+        {
+            _gustEnabled = !_gustEnabled;
+            if (!_gustEnabled)
+            {
+                _gustPower = 0.0;
+                _gustLeft = 0.0;
+                _gustTimer = 10.0;
+            }
+            else
+            {
+                _gustTimer = 5.0 + _rng.NextDouble() * 10.0;
+            }
+            _miGust.Checked = _gustEnabled;
+            Log("gusts -> " + _gustEnabled);
         }
 
         void OnClickBehindIcons(object sender, EventArgs e)
@@ -816,6 +857,7 @@ namespace DesktopSnow
         {
             Flake f = new Flake();
             f.R = 1.0 + _rng.NextDouble() * 3.2;
+            if (_gustLeft > 0.0 && _rng.NextDouble() < 0.3) f.R = 2.6 + _rng.NextDouble() * 1.4;
             f.Speed = 15 + _rng.NextDouble() * 45 + (f.R - 1.0) * 12;
             f.SwayAmp = 10 + _rng.NextDouble() * 40;
             f.Phase = _rng.NextDouble() * Math.PI * 2;
@@ -853,7 +895,30 @@ namespace DesktopSnow
             _t += dt;
             _wind = Math.Sin(_t / 6.5) * 18 + Math.Sin(_t / 2.3) * 6;
 
-            if (_flakes.Count < _targetCount && _rng.NextDouble() < 0.4) AddFlake(false);
+            _gustTimer -= dt;
+            if (_gustTimer <= 0.0)
+            {
+                if (_gustEnabled)
+                {
+                    _gustTarget = ((_rng.NextDouble() < 0.5) ? -1.0 : 1.0) * (110.0 + _rng.NextDouble() * 70.0);
+                    _gustLeft = 2.5 + _rng.NextDouble() * 3.5;
+                    _gustTimer = 25.0 + _rng.NextDouble() * 20.0;
+                }
+                else
+                {
+                    _gustTimer = 10.0;
+                }
+            }
+            if (_gustLeft > 0.0)
+            {
+                _gustLeft -= dt;
+                if (_gustLeft <= 0.0) _gustTarget = 0.0;
+            }
+            _gustPower += (_gustTarget - _gustPower) * Math.Min(1.0, dt * 1.5);
+            _wind += _gustPower;
+
+            double flakeSpawnChance = (_gustLeft > 0.0) ? 0.75 : 0.4;
+            if (_flakes.Count < _targetCount && _rng.NextDouble() < flakeSpawnChance) AddFlake(false);
 
             double width = SystemParameters.VirtualScreenWidth;
 
@@ -884,6 +949,29 @@ namespace DesktopSnow
             {
                 if (_depths[i] < 0) _depths[i] = 0;
             }
+
+            _sparkleTimer -= dt;
+            if (_sparkleTimer <= 0.0)
+            {
+                _sparkleTimer = 0.12 + _rng.NextDouble() * 0.25;
+                if (_depths != null && _groundY > 0 && _sparkles.Count < 40)
+                {
+                    for (int tries = 0; tries < 3; tries++)
+                    {
+                        double sx = _rng.NextDouble() * W();
+                        int si = DriftIndexFor(sx);
+                        if (_depths[si] > 2.0)
+                        {
+                            SpawnSparkle(sx, _groundY - _depths[si]);
+                            break;
+                        }
+                    }
+                }
+            }
+            UpdateSparkles(dt);
+
+            _bulbPhase++;
+            if (_bulbPhase % 33 == 0) ToggleTreeLights();
 
             _driftTick++;
             if (_driftTick % 6 == 0) UpdateDriftShape();
@@ -1425,6 +1513,24 @@ namespace DesktopSnow
             cap.Points = new PointCollection(new Point[] { new Point(24, 2), new Point(17, 14), new Point(31, 14) });
             cap.Fill = snowCap;
             tree.Children.Add(cap);
+
+            Color[] bulbColors = new Color[]
+            {
+                Color.FromRgb(255, 60, 60), Color.FromRgb(255, 200, 40),
+                Color.FromRgb(80, 200, 255), Color.FromRgb(100, 235, 100),
+                Color.FromRgb(230, 80, 200)
+            };
+            double[] bx = new double[] { 17.0, 27.0, 21.0, 25.0 };
+            double[] by = new double[] { 24.0, 33.0, 44.0, 12.0 };
+            for (int i = 0; i < 4; i++)
+            {
+                Ellipse bulb = new Ellipse { Width = 3.5, Height = 3.5 };
+                Color bc = bulbColors[_rng.Next(bulbColors.Length)];
+                bulb.Fill = new SolidColorBrush(bc);
+                tree.Children.Add(ShapeAt(bulb, bx[i], by[i]));
+                _treeBulbs.Add(bulb);
+                _treeBulbColors.Add(bc);
+            }
 
             return tree;
         }
@@ -2070,6 +2176,88 @@ namespace DesktopSnow
                 c.Shape.Opacity = Math.Min(1.0, c.Life);
                 Canvas.SetLeft(c.Shape, c.X);
                 Canvas.SetTop(c.Shape, c.Y);
+            }
+        }
+
+        void SpawnSparkle(double x, double y)
+        {
+            if (_canvas == null) return;
+            Sparkle s = new Sparkle();
+            s.X = x + (_rng.NextDouble() - 0.5) * 10.0;
+            s.Y = y - _rng.NextDouble() * 2.0;
+            s.MaxLife = 0.5 + _rng.NextDouble() * 0.7;
+            s.Life = s.MaxLife;
+            byte v = (byte)(238 + _rng.Next(18));
+            Ellipse e = new Ellipse
+            {
+                Width = 1.2 + _rng.NextDouble() * 0.9,
+                Height = 1.2 + _rng.NextDouble() * 0.9,
+                Fill = new SolidColorBrush(Color.FromRgb(v, v, 255))
+            };
+            e.Opacity = 0.9;
+            s.Shape = e;
+            System.Windows.Controls.Panel.SetZIndex(e, 55);
+            Canvas.SetLeft(e, s.X);
+            Canvas.SetTop(e, s.Y);
+            _sparkles.Add(s);
+            _canvas.Children.Add(e);
+        }
+
+        void UpdateSparkles(double dt)
+        {
+            for (int i = _sparkles.Count - 1; i >= 0; i--)
+            {
+                Sparkle s = _sparkles[i];
+                s.Life -= dt;
+                if (s.Life <= 0.0)
+                {
+                    RemoveShape(s.Shape);
+                    _sparkles.RemoveAt(i);
+                    continue;
+                }
+                s.Shape.Opacity = 0.9 * (s.Life / s.MaxLife);
+            }
+        }
+
+        void ToggleTreeLights()
+        {
+            bool on = (_bulbPhase / 33) % 2 == 0;
+            for (int i = _treeBulbs.Count - 1; i >= 0; i--)
+            {
+                Ellipse b = _treeBulbs[i];
+                Canvas pc = b.Parent as Canvas;
+                if (pc == null || pc.Parent == null)
+                {
+                    _treeBulbs.RemoveAt(i);
+                    _treeBulbColors.RemoveAt(i);
+                    continue;
+                }
+                b.Fill = on
+                    ? new SolidColorBrush(_treeBulbColors[i])
+                    : new SolidColorBrush(Color.FromRgb(70, 72, 66));
+            }
+        }
+
+        void ClearAllSnow()
+        {
+            if (_depths != null)
+            {
+                for (int i = 0; i < _depths.Length; i++) _depths[i] = 0.0;
+                UpdateDriftShape();
+            }
+            for (int i = _roofs.Count - 1; i >= 0; i--)
+            {
+                Roof r = _roofs[i];
+                if (r.Poly != null) r.Poly.Points = new PointCollection();
+                r.Depths = new double[r.Depths == null ? 2 : r.Depths.Length];
+                MoveRoofDropsOff(r);
+            }
+            for (int i = _drops.Count - 1; i >= 0; i--)
+            {
+                SnowDrop d = _drops[i];
+                if (d.Held || !d.Stuck) continue;
+                RemoveShape(d.Shape);
+                _drops.RemoveAt(i);
             }
         }
 
