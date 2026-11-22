@@ -237,6 +237,9 @@ namespace DesktopSnow
         readonly List<Roof> _roofs = new List<Roof>();
         readonly HashSet<IntPtr> _roofSet = new HashSet<IntPtr>();
         bool _fullscreenPresent;
+        readonly List<Icicle> _icicles = new List<Icicle>();
+        readonly List<IcicleDrip> _icicleDrips = new List<IcicleDrip>();
+        double _icicleTimer = 3.0;
         bool _grinchActive;
         bool _grinchDead;
         bool _grinchPending;
@@ -357,6 +360,25 @@ namespace DesktopSnow
             public double Phase;
             public double StateT;
             public Canvas Shape;
+        }
+
+        class Icicle
+        {
+            public Roof Roof;
+            public int Seg;
+            public double X;
+            public double H;
+            public double W;
+            public double Phase;
+            public Polygon Shape;
+        }
+
+        class IcicleDrip
+        {
+            public double X;
+            public double Y;
+            public double Life;
+            public Ellipse Shape;
         }
 
 
@@ -1722,6 +1744,7 @@ namespace DesktopSnow
                 }
             }
             UpdateSparkles(dt);
+            UpdateIcicles(dt);
 
             _bulbPhase++;
             if (_bulbPhase % 33 == 0) ToggleTreeLights();
@@ -2501,6 +2524,141 @@ namespace DesktopSnow
                 clip = new CombinedGeometry(GeometryCombineMode.Exclude, clip, new RectangleGeometry(win));
             }
             return clip;
+        }
+
+        Polygon BuildIcicle(double w, double h)
+        {
+            Polygon p = new Polygon();
+            p.Points = new PointCollection
+            {
+                new Point(w * 0.15, 0.0), new Point(w * 0.85, 0.0),
+                new Point(w * 0.72, h * 0.35), new Point(w * 0.58, h * 0.7),
+                new Point(w * 0.5, h), new Point(w * 0.42, h * 0.7),
+                new Point(w * 0.28, h * 0.35)
+            };
+            p.Fill = new LinearGradientBrush(
+                Color.FromRgb(234, 244, 255), Color.FromArgb(170, 175, 210, 240), 90.0);
+            p.Stroke = new SolidColorBrush(Color.FromArgb(120, 150, 185, 225));
+            p.StrokeThickness = 1.0;
+            p.Opacity = 0.9;
+            return p;
+        }
+
+        void EnsureIcicles(Roof r)
+        {
+            if (_roofCanvas == null || r == null || r.Depths == null || r.Depths.Length < 6) return;
+            int have = 0;
+            List<int> taken = new List<int>();
+            for (int i = 0; i < _icicles.Count; i++)
+            {
+                if (_icicles[i].Roof == r)
+                {
+                    have++;
+                    taken.Add(_icicles[i].Seg);
+                }
+            }
+            if (have >= 5) return;
+            for (int tries = 0; tries < 8; tries++)
+            {
+                int seg = _rng.Next(1, r.Depths.Length - 1);
+                if (taken.Contains(seg)) continue;
+                if (r.Depths[seg] < 3.0) continue;
+                double w = 3.5 + _rng.NextDouble() * 3.5;
+                double h = 9.0 + r.Depths[seg] * 0.9 + _rng.NextDouble() * 8.0;
+                double x = r.L + seg * _driftSegment + 3.0 + _rng.NextDouble() * (_driftSegment - 8.0);
+                double y = r.T - r.Depths[seg] + 1.0;
+                if (IsRoofOccluded(r, x)) continue;
+                Polygon p = BuildIcicle(w, h);
+                Canvas.SetLeft(p, x);
+                Canvas.SetTop(p, y);
+                System.Windows.Controls.Panel.SetZIndex(p, 46);
+                _roofCanvas.Children.Add(p);
+                Icicle ic = new Icicle();
+                ic.Roof = r;
+                ic.Seg = seg;
+                ic.X = x;
+                ic.W = w;
+                ic.H = h;
+                ic.Phase = _rng.NextDouble() * 6.0;
+                ic.Shape = p;
+                _icicles.Add(ic);
+                return;
+            }
+        }
+
+        void DripIcicle(Icicle ic)
+        {
+            if (_roofCanvas == null || _icicleDrips.Count > 12) return;
+            IcicleDrip d = new IcicleDrip();
+            d.X = ic.X + ic.W * 0.5;
+            d.Y = Canvas.GetTop(ic.Shape) + ic.H - 1.0;
+            d.Life = 0.6;
+            d.Shape = new Ellipse
+            {
+                Width = 2.5,
+                Height = 4.5,
+                Fill = new SolidColorBrush(Color.FromArgb(210, 198, 226, 250))
+            };
+            System.Windows.Controls.Panel.SetZIndex(d.Shape, 46);
+            Canvas.SetLeft(d.Shape, d.X);
+            Canvas.SetTop(d.Shape, d.Y);
+            _icicleDrips.Add(d);
+            _roofCanvas.Children.Add(d.Shape);
+        }
+
+        void UpdateIcicles(double dt)
+        {
+            if (_roofCanvas == null) return;
+            _icicleTimer -= dt;
+            if (_icicleTimer <= 0.0)
+            {
+                _icicleTimer = 2.0 + _rng.NextDouble() * 2.0;
+                if (!_fullscreenPresent)
+                {
+                    for (int i = _roofs.Count - 1; i >= 0; i--) EnsureIcicles(_roofs[i]);
+                }
+            }
+            for (int i = _icicles.Count - 1; i >= 0; i--)
+            {
+                Icicle ic = _icicles[i];
+                Roof r2 = ic.Roof;
+                bool bad = r2 == null || _roofs.IndexOf(r2) < 0 ||
+                    r2.Depths == null || r2.Depths.Length <= ic.Seg;
+                if (!bad && r2.Depths[ic.Seg] < 1.5) bad = true;
+                if (!bad)
+                {
+                    bool hidden = IsRoofOccluded(r2, ic.X);
+                    if (ic.Shape != null)
+                    {
+                        ic.Shape.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
+                        ic.Shape.Opacity = 0.8 + Math.Sin(ic.Phase * 2.2) * 0.2;
+                    }
+                    if (!hidden)
+                    {
+                        ic.Phase += dt;
+                        if (_rng.NextDouble() < dt * 0.25) DripIcicle(ic);
+                    }
+                }
+                if (bad)
+                {
+                    if (ic.Shape != null) _roofCanvas.Children.Remove(ic.Shape);
+                    _icicles.RemoveAt(i);
+                }
+            }
+            for (int i = _icicleDrips.Count - 1; i >= 0; i--)
+            {
+                IcicleDrip d = _icicleDrips[i];
+                d.Life -= dt;
+                d.Y += 90.0 * dt;
+                if (d.Life <= 0.0 || d.Y > H())
+                {
+                    _roofCanvas.Children.Remove(d.Shape);
+                    _icicleDrips.RemoveAt(i);
+                    continue;
+                }
+                d.Shape.Opacity = Math.Max(0.0, d.Life / 0.6);
+                Canvas.SetTop(d.Shape, d.Y);
+            }
         }
 
         void RefreshRoofs()
@@ -3429,6 +3587,20 @@ namespace DesktopSnow
                 }
                 _snowmen.RemoveAt(i);
             }
+            for (int i = _icicles.Count - 1; i >= 0; i--)
+            {
+                Icicle ic = _icicles[i];
+                if (ic.Shape != null && _roofCanvas != null) _roofCanvas.Children.Remove(ic.Shape);
+                _icicles.RemoveAt(i);
+            }
+            if (_roofCanvas != null)
+            {
+                for (int i = _icicleDrips.Count - 1; i >= 0; i--)
+                {
+                    _roofCanvas.Children.Remove(_icicleDrips[i].Shape);
+                }
+            }
+            _icicleDrips.Clear();
         }
 
         void PopDrop(SnowDrop d)
