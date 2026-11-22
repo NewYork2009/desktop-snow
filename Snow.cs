@@ -360,6 +360,7 @@ namespace DesktopSnow
             public double Y;
             public double Life;
             public double MaxLife;
+            public double BaseOp;
             public Roof Ref;
             public bool OnRoof;
             public FrameworkElement Shape;
@@ -2670,7 +2671,7 @@ namespace DesktopSnow
         void UpdateCountdown()
         {
             if (_countdownBoard == null || _countdownText == null) return;
-            if (!_countdownEnabled)
+            if (!_countdownEnabled || _season != Season.Winter)
             {
                 _countdownBoard.Visibility = Visibility.Collapsed;
                 _countdownText.Visibility = Visibility.Collapsed;
@@ -3844,7 +3845,9 @@ namespace DesktopSnow
                 Canvas.SetLeft(p, x);
                 Canvas.SetTop(p, y);
                 System.Windows.Controls.Panel.SetZIndex(p, 46);
-                p.Clip = ComputeRoofClip(r);
+                Geometry iclip = ComputeRoofClip(r);
+                if (iclip != null) iclip.Transform = new TranslateTransform(-x, -y);
+                p.Clip = iclip;
                 _roofCanvas.Children.Add(p);
                 Icicle ic = new Icicle();
                 ic.Roof = r;
@@ -4657,19 +4660,25 @@ namespace DesktopSnow
             leaf.StrokeThickness = 0.6;
             leaf.RenderTransform = new RotateTransform(_rng.NextDouble() * 360.0);
             leaf.Opacity = 0.7 + _rng.NextDouble() * 0.3;
+            d.BaseOp = leaf.Opacity;
             d.Shape = leaf;
             d.X = x;
             d.Y = y;
             d.Ref = refRoof;
             d.OnRoof = onRoof;
-            d.MaxLife = -1.0;
-            d.Life = -1.0;
+            d.MaxLife = 90.0 + _rng.NextDouble() * 60.0;
+            d.Life = d.MaxLife;
             System.Windows.Controls.Panel.SetZIndex(leaf, 56);
             Canvas.SetLeft(leaf, x - w * 0.5);
             Canvas.SetTop(leaf, y - h * 0.5);
             if (onRoof)
             {
-                if (refRoof != null) leaf.Clip = ComputeRoofClip(refRoof);
+                if (refRoof != null)
+                {
+                    Geometry rclip = ComputeRoofClip(refRoof);
+                    if (rclip != null) rclip.Transform = new TranslateTransform(w * 0.5 - x, h * 0.5 - y);
+                    leaf.Clip = rclip;
+                }
                 _roofCanvas.Children.Add(leaf);
             }
             else
@@ -4684,29 +4693,19 @@ namespace DesktopSnow
             for (int i = _decos.Count - 1; i >= 0; i--)
             {
                 DriftDeco d = _decos[i];
-                if (_season != Season.Autumn && d.Life < 0.0)
-                {
-                    d.MaxLife = 0.7;
-                    d.Life = 0.7;
-                }
+                if (_season != Season.Autumn && d.Life > 2.0) d.Life = 2.0;
                 bool gone = false;
-                if (d.Life < 0.0)
+                d.Life -= dt;
+                if (d.Life <= 0.0 || DepthAtDeco(d) < 1.5)
                 {
-                    if (DepthAtDeco(d) < 1.5) gone = true;
+                    gone = true;
                 }
                 else
                 {
-                    d.Life -= dt;
-                    if (d.Life <= 0.0)
-                    {
-                        gone = true;
-                    }
-                    else
-                    {
-                        double fade = Math.Min(1.0, (d.MaxLife - d.Life) / 0.35);
-                        fade = Math.Min(fade, d.Life / 0.35);
-                        d.Shape.Opacity = 0.9 * Math.Max(0.0, fade);
-                    }
+                    double t = 1.0;
+                    if (d.Life > d.MaxLife - 0.4) t = (d.MaxLife - d.Life) / 0.4;
+                    if (d.Life < 2.0) t = Math.Min(t, d.Life / 2.0);
+                    d.Shape.Opacity = d.BaseOp * Math.Max(0.0, Math.Min(1.0, t));
                 }
                 if (gone)
                 {
