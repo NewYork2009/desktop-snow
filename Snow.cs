@@ -4639,7 +4639,7 @@ namespace DesktopSnow
             return pal[_rng.Next(pal.Length)];
         }
 
-        void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint)
+        void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint, double surfY)
         {
             if (_canvas == null || _roofCanvas == null) return;
             if (_decos.Count >= 1500) return;
