@@ -4665,8 +4665,8 @@ namespace DesktopSnow
             d.MaxLife = -1.0;
             d.Life = -1.0;
             System.Windows.Controls.Panel.SetZIndex(leaf, 56);
-            Canvas.SetLeft(leaf, 0.0);
-            Canvas.SetTop(leaf, 0.0);
+            Canvas.SetLeft(leaf, x - w * 0.5);
+            Canvas.SetTop(leaf, y - h * 0.5);
             if (onRoof)
             {
                 if (refRoof != null) leaf.Clip = ComputeRoofClip(refRoof);
