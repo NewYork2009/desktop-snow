@@ -336,6 +336,8 @@ namespace DesktopSnow
             public int LastMoveTick = -100;
             public int ClipVer;
             public double OcclSig = -1.0;
+            public int LastOccluders = -1;
+            public int LastOcclLogTick = -1000;
         }
 
         class Confetto
@@ -3751,12 +3753,27 @@ namespace DesktopSnow
             return -1;
         }
 
+        string LogRect(double l, double t, double rgt, double b)
+        {
+            return "[" + (int)l + "," + (int)t + " - " + (int)rgt + "," + (int)b + "]";
+        }
+
+        int CountRoofDecos(Roof roof)
+        {
+            int count = 0;
+            for (int i = 0; i < _decos.Count; i++)
+            {
+                if (_decos[i].OnRoof && _decos[i].Ref == roof) count++;
+            }
+            return count;
+        }
+
         bool IsRoofOccluded(Roof roof, double x)
         {
             for (int k = 0; k < _enumList.Count && k < roof.Z; k++)
             {
                 RECT e = _enumRects[k];
-                if (x < e.Left - 2.0 || x > e.Right + 2.0) continue;
+                if (x < e.Left - 3.0 || x > e.Right + 3.0) continue;
                 double wtop = e.Top - SystemParameters.VirtualScreenTop;
                 double wbot = e.Bottom - SystemParameters.VirtualScreenTop;
                 if (wtop <= roof.T + 2.0 && wbot > roof.T) return true;
@@ -3777,7 +3794,7 @@ namespace DesktopSnow
                     e.Right - e.Left,
                     e.Bottom - e.Top);
                 if (!win.IntersectsWith(area)) continue;
-                win.Inflate(2.0, 2.0);
+                win.Inflate(3.0, 3.0);
                 clip = new CombinedGeometry(GeometryCombineMode.Exclude, clip, new RectangleGeometry(win));
             }
             return clip;
@@ -3803,7 +3820,7 @@ namespace DesktopSnow
                     e.Right - e.Left,
                     e.Bottom - e.Top);
                 if (!win.IntersectsWith(band)) continue;
-                win.Inflate(2.0, 2.0);
+                win.Inflate(3.0, 3.0);
                 clip = new CombinedGeometry(GeometryCombineMode.Exclude, clip, new RectangleGeometry(win));
             }
             return clip;
@@ -4022,6 +4039,7 @@ namespace DesktopSnow
                         r.Depths = new double[Math.Max(2, (int)(wpx / _driftSegment) + 2)];
                 }
                 double sig = idx * 17.0 + r.L + r.T * 2.0 + r.R * 3.0 + r.T;
+                int occluders = 0;
                 for (int k = 0; k < _enumList.Count && k < idx; k++)
                 {
                     RECT oc = _enumRects[k];
@@ -4032,11 +4050,19 @@ namespace DesktopSnow
                     if (wl >= r.R || wr <= r.L) continue;
                     if (wt >= r.T + 48.0 || wb <= r.T - 100.0) continue;
                     sig += k * 131.0 + oc.Left + oc.Top * 2.0 + oc.Right * 3.0 + oc.Bottom * 5.0;
+                    occluders++;
                 }
                 if (sig != r.OcclSig)
                 {
+                    bool countChanged = occluders != r.LastOccluders;
                     r.OcclSig = sig;
                     r.ClipVer++;
+                    if (countChanged && _driftTick - r.LastOcclLogTick > 30)
+                    {
+                        r.LastOcclLogTick = _driftTick;
+                        Log("occlusion: roof=" + LogRect(r.L, r.T, r.R, r.B) + " z=" + idx +
+                            " windowsAbove=" + occluders + " (reclipped " + CountRoofDecos(r) + " leaves)");
+                    }
                 }
             }
 
