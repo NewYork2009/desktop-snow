@@ -2048,7 +2048,6 @@ namespace DesktopSnow
                     else
                     {
                         d.Sink += (d.IsTree ? 0.35 : 0.6) * dt;
-                        d.Y = rr.T - h + d.Sink;
                         if (d.Sink >= h)
                         {
                             RemoveShape(d.Shape);
@@ -2832,13 +2831,13 @@ namespace DesktopSnow
             d.Flung = false;
             d.RotSpeed = 0.0;
             d.RoofHwnd = roof.Hwnd;
-            d.Sink = d.IsTree ? 6.0 : 4.0;
-            d.Y = roof.T - h + d.Sink;
+            d.Sink = d.IsTree ? 4.0 : 3.0;
+            d.Y = roof.T - h + Math.Min(d.Sink, 2.0);
             d.Host = _roofCanvas;
             Canvas prev = d.Shape.Parent as Canvas;
             if (prev != null && prev != _roofCanvas) prev.Children.Remove(d.Shape);
             _roofCanvas.Children.Add(d.Shape);
-            System.Windows.Controls.Panel.SetZIndex(d.Shape, 55);
+            System.Windows.Controls.Panel.SetZIndex(d.Shape, 45);
             d.Shape.Clip = ComputeDropClipAt(roof, d.X, d.Y);
             RoofPuff(d.X + d.Shape.Width / 2.0, roof.T, 8, roof);
         }
