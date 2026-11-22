@@ -103,7 +103,7 @@ namespace DesktopSnow
         static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
-        const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+        const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";\n        const string SettingsKeyPath = "Software\\DesktopSnow";
 
         static string _logPath;
 
@@ -136,6 +136,8 @@ namespace DesktopSnow
         }
 
         enum SnowMode { DesktopOnly, Screensaver }
+
+        enum Season { Winter = 0, Spring = 1, Summer = 2, Autumn = 3 }
 
         Canvas _canvas;
         DispatcherTimer _timer;
@@ -180,6 +182,26 @@ namespace DesktopSnow
         SWF.MenuItem _miAutostart;
         SWF.MenuItem _miScreensaver;
         SWF.MenuItem _miIcons;
+        Season _season = Season.Winter;
+        Canvas _butterfly;
+        ScaleTransform _bfWL;
+        ScaleTransform _bfWR;
+        double _bfX;
+        double _bfBaseY;
+        double _bfPhase;
+        double _bfDir = 1.0;
+        double _bfTimer = 6.0;
+        double _bfFlightT;
+        Canvas _bird;
+        ScaleTransform _birdFlip;
+        RotateTransform _birdWing;
+        double _birdX;
+        double _birdY;
+        double _birdPhase;
+        double _birdDir = 1.0;
+        double _birdTimer = 10.0;
+        double _birdDropT = 2.0;
+        double _birdDropsLeft;
         readonly Random _rng = new Random();
         int _targetCount = 180;
         SnowMode _mode = SnowMode.DesktopOnly;
@@ -395,6 +417,23 @@ namespace DesktopSnow
             public double Phase;
             public double SwaySpeed;
             public double Opacity;
+            public FrameworkElement Shape;
+            public int Kind;
+            public double Rot;
+            public double RotSpeed;
+            public RotateTransform Rtf;
+            public Color Tint;
+        }
+
+        class Feather
+        {
+            public double X;
+            public double Y;
+            public double Vx;
+            public double Vy;
+            public double Life;
+            public double Phase;
+            public RotateTransform Rtf;
             public Ellipse Shape;
         }
 
@@ -430,6 +469,7 @@ namespace DesktopSnow
                 InstallHotkey();
                 SetupTray();
                 EnsureAutostart();
+                LoadSeason();
                 StartAnimation();
                 Log("started, mode: " + _mode + ", behindIcons: " + _attachedBehindIcons);
                 _tray.ShowBalloonTip(4000, "DesktopSnow",
@@ -563,6 +603,10 @@ namespace DesktopSnow
             menu.MenuItems.Add(new SWF.MenuItem("Больше снега", delegate { _targetCount += 80; TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Меньше снега", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Убрать весь снег", delegate { ClearAllSnow(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("\u0421\u043c\u0435\u043d\u0438\u0442\u044c \u0441\u0435\u0437\u043e\u043d...", delegate
+            {
+                Dispatcher.BeginInvoke((Action)delegate { ShowSeasonPicker(); });
+            }));
             menu.MenuItems.Add(new SWF.MenuItem("-"));
             menu.MenuItems.Add(new SWF.MenuItem("Диагностика (открыть лог)", delegate
             {
@@ -689,6 +733,672 @@ namespace DesktopSnow
             if (!IsAutostartEnabled())
             {
                 AddAutostart();
+            }
+        }
+
+        // ---- SEASONS ----
+
+        Color SeasonDriftTop()
+        {
+            if (_season == Season.Spring) return Color.FromRgb(255, 233, 245);
+            if (_season == Season.Summer) return Color.FromArgb(150, 138, 188, 238);
+            if (_season == Season.Autumn) return Color.FromRgb(216, 158, 86);
+            return Color.FromRgb(245, 250, 255);
+        }
+
+        Color SeasonDriftBottom()
+        {
+            if (_season == Season.Spring) return Color.FromRgb(244, 197, 226);
+            if (_season == Season.Summer) return Color.FromArgb(110, 96, 148, 220);
+            if (_season == Season.Autumn) return Color.FromRgb(150, 96, 48);
+            return Color.FromRgb(225, 235, 250);
+        }
+
+        void ApplySeasonColors()
+        {
+            if (_drift != null)
+            {
+                _drift.Fill = new LinearGradientBrush(SeasonDriftTop(), SeasonDriftBottom(), 90.0);
+                _drift.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
+            }
+            if (_roofCanvas != null)
+            {
+                for (int i = 0; i < _roofs.Count; i++)
+                {
+                    Roof r = _roofs[i];
+                    if (r.Poly != null)
+                    {
+                        r.Poly.Fill = new SolidColorBrush(SeasonDriftTop());
+                        r.Poly.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
+                    }
+                }
+            }
+        }
+
+        void SaveSeason()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(SettingsKeyPath))
+                {
+                    key.SetValue("Season", ((int)_season).ToString());
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("save season failed: " + ex.Message);
+            }
+        }
+
+        void LoadSeason()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(SettingsKeyPath, false))
+                {
+                    if (key == null) return;
+                    object v = key.GetValue("Season");
+                    if (v == null) return;
+                    int n;
+                    if (int.TryParse(v.ToString(), out n) && n >= 0 && n <= 3)
+                    {
+                        _season = (Season)n;
+                        Log("season restored: " + n);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("load season failed: " + ex.Message);
+            }
+        }
+
+        void ApplySeason(Season s)
+        {
+            _season = s;
+            SaveSeason();
+            RebuildSeasonScene();
+            Log("season applied: " + s);
+        }
+
+        void RebuildSeasonScene()
+        {
+            ClearAllSnow();
+            CleanupSeasonActors();
+            CleanupWinterActors();
+            if (_rabbit != null && _canvas != null)
+            {
+                _canvas.Children.Remove(_rabbit);
+                _rabbit = null;
+            }
+            _rabbitState = 0;
+            if (_canvas != null)
+            {
+                for (int i = _flakes.Count - 1; i >= 0; i--)
+                {
+                    _canvas.Children.Remove(_flakes[i].Shape);
+                }
+            }
+            _flakes.Clear();
+            ApplySeasonColors();
+            if (_moon != null)
+            {
+                _moon.Visibility = (_season == Season.Winter) ? Visibility.Visible : Visibility.Collapsed;
+            }
+            AddFlakes(_targetCount);
+        }
+
+        void CleanupWinterActors()
+        {
+            if (_train != null)
+            {
+                if (_canvas != null) _canvas.Children.Remove(_train);
+                _train = null;
+            }
+            _trainActive = false;
+            _trainDowned = false;
+            _trainTf = null;
+            _trainRot = null;
+            _legTfs.Clear();
+            _headTfs.Clear();
+            _armTf = null;
+            _santaCheckTimer = 0.0;
+
+            if (_grinch != null)
+            {
+                if (_canvas != null) _canvas.Children.Remove(_grinch);
+                _grinch = null;
+            }
+            _grinchActive = false;
+            _grinchDead = false;
+            _grinchPending = false;
+            _grinchLoot = null;
+            _grinchRot = null;
+            _grinchStack.Clear();
+
+            for (int i = _drops.Count - 1; i >= 0; i--)
+            {
+                SnowDrop d = _drops[i];
+                if (d.Shape != null) RemoveShape(d.Shape);
+                _drops.RemoveAt(i);
+            }
+            for (int i = _balls.Count - 1; i >= 0; i--)
+            {
+                SnowBall b = _balls[i];
+                if (b.Shape != null) RemoveShape(b.Shape);
+                for (int j = 0; j < _balls.Count; j++)
+                {
+                    if (_balls[j].Under == b) _balls[j].Under = null;
+                }
+                _balls.RemoveAt(i);
+            }
+            _ballHeld = null;
+        }
+
+        void CleanupSeasonActors()
+        {
+            if (_butterfly != null)
+            {
+                if (_canvas != null) _canvas.Children.Remove(_butterfly);
+                _butterfly = null;
+            }
+            _bfWL = null;
+            _bfWR = null;
+            _bfTimer = 6.0 + _rng.NextDouble() * 10.0;
+            _bfFlightT = 0.0;
+
+            if (_bird != null)
+            {
+                if (_canvas != null) _canvas.Children.Remove(_bird);
+                _bird = null;
+            }
+            _birdFlip = null;
+            _birdWing = null;
+            _birdTimer = 10.0 + _rng.NextDouble() * 20.0;
+
+            if (_canvas != null)
+            {
+                for (int i = _feathers.Count - 1; i >= 0; i--)
+                {
+                    if (_feathers[i].Shape != null) _canvas.Children.Remove(_feathers[i].Shape);
+                    _feathers.RemoveAt(i);
+                }
+            }
+        }
+
+        void SeasonTick(double dt)
+        {
+            UpdateButterfly(dt);
+            UpdateBird(dt);
+            UpdateFeathers(dt);
+        }
+
+        void BuildButterfly()
+        {
+            if (_canvas == null || _butterfly != null) return;
+            _bfPhase = _rng.NextDouble() * Math.PI * 2.0;
+            _bfDir = (_rng.NextDouble() < 0.5) ? 1.0 : -1.0;
+            _bfBaseY = 110.0 + _rng.NextDouble() * (H() * 0.35);
+            _bfX = _rng.NextDouble() * (W() - 120.0) + 60.0;
+            _bfFlightT = 0.0;
+
+            _butterfly = new Canvas();
+            _bfWL = new ScaleTransform { ScaleX = 1.0, ScaleY = 1.0 };
+            _bfWR = new ScaleTransform { ScaleX = 1.0, ScaleY = 1.0 };
+
+            Ellipse body = new Ellipse { Width = 4.0, Height = 13.0 };
+            body.Fill = new SolidColorBrush(Color.FromRgb(70, 45, 80));
+            Canvas.SetLeft(body, 2.0);
+            Canvas.SetTop(body, 1.5);
+            _butterfly.Children.Add(body);
+
+            Color[] wingColors = new Color[] { Color.FromRgb(196, 110, 255), Color.FromRgb(255, 140, 222) };
+            for (int i = 0; i < 2; i++)
+            {
+                Ellipse wing = new Ellipse { Width = 12.5, Height = 16.0 };
+                Color wc = wingColors[i];
+                wing.Fill = new LinearGradientBrush(
+                    Color.FromArgb(230, wc.R, wc.G, wc.B), Color.FromArgb(120, wc.R, wc.G, wc.B), 90.0);
+                Canvas.SetLeft(wing, i == 0 ? -11.0 : 6.5);
+                Canvas.SetTop(wing, 0.0);
+                wing.RenderTransform = (i == 0) ? _bfWL : _bfWR;
+                wing.RenderTransformOrigin = (i == 0) ? new Point(1.0, 0.5) : new Point(0.0, 0.5);
+                _butterfly.Children.Add(wing);
+            }
+
+            System.Windows.Controls.Panel.SetZIndex(_butterfly, 60);
+            Canvas.SetLeft(_butterfly, _bfX);
+            Canvas.SetTop(_butterfly, _bfBaseY);
+            _butterfly.Opacity = 0.0;
+            _canvas.Children.Add(_butterfly);
+            Log("butterfly appeared");
+        }
+
+        void UpdateButterfly(double dt)
+        {
+            if (_season != Season.Spring)
+            {
+                if (_butterfly != null)
+                {
+                    if (_canvas != null) _canvas.Children.Remove(_butterfly);
+                    _butterfly = null;
+                    _bfWL = null;
+                    _bfWR = null;
+                    _bfTimer = 99999.0;
+                }
+                return;
+            }
+            if (_butterfly == null)
+            {
+                _bfTimer -= dt;
+                if (_bfTimer <= 0.0) BuildButterfly();
+                return;
+            }
+            _bfPhase += dt * 13.0;
+            _bfFlightT += dt;
+            double flap = 0.30 + Math.Abs(Math.Sin(_bfPhase)) * 0.75;
+            if (_bfWL != null) _bfWL.ScaleX = flap;
+            if (_bfWR != null) _bfWR.ScaleX = flap;
+            _bfX += _bfDir * 46.0 * dt;
+            if (_bfX < 20.0) { _bfX = 20.0; _bfDir = 1.0; }
+            if (_bfX > W() - 20.0) { _bfX = W() - 20.0; _bfDir = -1.0; }
+            if (_rng.NextDouble() < 0.006) _bfDir *= -1.0;
+            double by = _bfBaseY + Math.Sin(_bfPhase * 0.25) * 60.0 + Math.Sin(_bfPhase * 0.93) * 18.0;
+            _butterfly.Opacity = Math.Min(1.0, _butterfly.Opacity + dt * 0.6);
+            Canvas.SetLeft(_butterfly, _bfX);
+            Canvas.SetTop(_butterfly, by - 8.0);
+            if (_bfFlightT > 40.0)
+            {
+                _butterfly.Opacity = Math.Max(0.0, _butterfly.Opacity - dt * 0.25);
+                if (_butterfly.Opacity <= 0.0)
+                {
+                    _canvas.Children.Remove(_butterfly);
+                    _butterfly = null;
+                    _bfWL = null;
+                    _bfWR = null;
+                    _bfTimer = 25.0 + _rng.NextDouble() * 40.0;
+                }
+            }
+        }
+
+        void BuildBird()
+        {
+            if (_canvas == null || _bird != null) return;
+            _birdPhase = _rng.NextDouble() * Math.PI * 2.0;
+            _birdY = 90.0 + _rng.NextDouble() * (H() * 0.30);
+            _birdX = (_birdDir > 0) ? -40.0 : W() + 40.0;
+            _birdDropsLeft = (_season == Season.Summer) ? 2.0 : 1.0;
+            _birdDropT = 1.4 + _rng.NextDouble() * 1.6;
+
+            _bird = new Canvas();
+            _birdFlip = new ScaleTransform { ScaleX = (_birdDir > 0) ? 1.0 : -1.0, ScaleY = 1.0 };
+            _bird.RenderTransform = _birdFlip;
+            _bird.RenderTransformOrigin = new Point(0.5, 0.5);
+            _birdWing = new RotateTransform { Angle = 0.0 };
+
+            Ellipse body = new Ellipse { Width = 18.0, Height = 11.0 };
+            body.Fill = new SolidColorBrush(Color.FromRgb(72, 58, 52));
+            Canvas.SetLeft(body, 0.0);
+            Canvas.SetTop(body, 4.0);
+            _bird.Children.Add(body);
+
+            Ellipse head = new Ellipse { Width = 7.0, Height = 7.0 };
+            head.Fill = new SolidColorBrush(Color.FromRgb(72, 58, 52));
+            Canvas.SetLeft(head, 14.0);
+            Canvas.SetTop(head, 1.0);
+            _bird.Children.Add(head);
+
+            Polygon beak = new Polygon();
+            beak.Points = new PointCollection { new Point(0, 1.5), new Point(6, 3.5), new Point(0, 5.5) };
+            beak.Fill = new SolidColorBrush(Color.FromRgb(230, 172, 66));
+            Canvas.SetLeft(beak, 19.0);
+            Canvas.SetTop(beak, 2.2);
+            _bird.Children.Add(beak);
+
+            Polygon tail = new Polygon();
+            tail.Points = new PointCollection { new Point(0, 1), new Point(9, 0), new Point(9, 6), new Point(0, 4) };
+            tail.Fill = new SolidColorBrush(Color.FromRgb(56, 45, 40));
+            Canvas.SetLeft(tail, -8.0);
+            Canvas.SetTop(tail, 4.5);
+            _bird.Children.Add(tail);
+
+            Polygon wing = new Polygon();
+            wing.Points = new PointCollection { new Point(0, 0), new Point(14, 2.5), new Point(5, 8) };
+            wing.Fill = new SolidColorBrush(Color.FromRgb(96, 78, 68));
+            Canvas.SetLeft(wing, 3.5);
+            Canvas.SetTop(wing, 3.5);
+            wing.RenderTransform = _birdWing;
+            wing.RenderTransformOrigin = new Point(0.1, 0.15);
+            _bird.Children.Add(wing);
+
+            System.Windows.Controls.Panel.SetZIndex(_bird, 60);
+            Canvas.SetLeft(_bird, _birdX - 15.0);
+            Canvas.SetTop(_bird, _birdY);
+            _bird.Opacity = 0.0;
+            _canvas.Children.Add(_bird);
+            Log("bird appeared");
+        }
+
+        void UpdateBird(double dt)
+        {
+            if (_season != Season.Summer && _season != Season.Autumn)
+            {
+                if (_bird != null)
+                {
+                    if (_canvas != null) _canvas.Children.Remove(_bird);
+                    _bird = null;
+                    _birdFlip = null;
+                    _birdWing = null;
+                    _birdTimer = 99999.0;
+                }
+                return;
+            }
+            if (_bird == null)
+            {
+                _birdTimer -= dt;
+                if (_birdTimer <= 0.0)
+                {
+                    _birdDir = (_rng.NextDouble() < 0.5) ? 1.0 : -1.0;
+                    BuildBird();
+                }
+                return;
+            }
+            double speed = (_season == Season.Autumn) ? 200.0 : 135.0;
+            _birdX += _birdDir * speed * dt;
+            _birdPhase += dt * 15.0;
+            double bob = Math.Sin(_birdPhase * 0.25) * 12.0;
+            if (_birdWing != null) _birdWing.Angle = Math.Sin(_birdPhase) * 38.0;
+            if (_birdFlip != null) _birdFlip.ScaleX = (_birdDir > 0) ? 1.0 : -1.0;
+            _bird.Opacity = Math.Min(1.0, _bird.Opacity + dt * 1.5);
+            Canvas.SetLeft(_bird, _birdX - 15.0);
+            Canvas.SetTop(_bird, _birdY + bob - 6.0);
+
+            bool past = (_birdDir > 0) ? (_birdX > W() * 0.25 + 100.0) : (_birdX < W() * 0.75 - 100.0);
+            _birdDropT -= dt;
+            if (past && _birdDropT <= 0.0 && _birdDropsLeft > 0)
+            {
+                _birdDropsLeft -= 1.0;
+                _birdDropT = 2.5 + _rng.NextDouble() * 2.5;
+                SpawnFeather(_birdX + 12.0 * _birdDir, _birdY + bob + 10.0);
+            }
+
+            bool offside = (_birdDir > 0) ? (_birdX > W() + 60.0) : (_birdX < -60.0);
+            if (offside)
+            {
+                if (_canvas != null) _canvas.Children.Remove(_bird);
+                _bird = null;
+                _birdFlip = null;
+                _birdWing = null;
+                _birdTimer = 35.0 + _rng.NextDouble() * 50.0;
+            }
+        }
+
+        void SpawnFeather(double x, double y)
+        {
+            if (_canvas == null) return;
+            Feather f = new Feather();
+            f.X = x;
+            f.Y = y;
+            f.Vx = -25.0 + _rng.NextDouble() * 50.0;
+            f.Vy = 20.0 + _rng.NextDouble() * 25.0;
+            f.Life = 3.5 + _rng.NextDouble() * 2.5;
+            f.Phase = _rng.NextDouble() * Math.PI * 2.0;
+            Ellipse shape = new Ellipse { Width = 4.5, Height = 11.0 };
+            shape.Fill = new LinearGradientBrush(Color.FromRgb(250, 248, 240), Color.FromRgb(225, 218, 200), 90.0);
+            RotateTransform rtf = new RotateTransform(0.0);
+            shape.RenderTransform = rtf;
+            shape.RenderTransformOrigin = new Point(0.5, 0.5);
+            shape.Opacity = 0.95;
+            f.Shape = shape;
+            f.Rtf = rtf;
+            System.Windows.Controls.Panel.SetZIndex(shape, 61);
+            Canvas.SetLeft(shape, f.X);
+            Canvas.SetTop(shape, f.Y);
+            _feathers.Add(f);
+            _canvas.Children.Add(shape);
+        }
+
+        void UpdateFeathers(double dt)
+        {
+            for (int i = _feathers.Count - 1; i >= 0; i--)
+            {
+                Feather f = _feathers[i];
+                f.Life -= dt;
+                f.Phase += dt * 3.2;
+                f.X += (f.Vx + Math.Sin(f.Phase) * 32.0 + _wind * 0.6) * dt;
+                f.Vy = Math.Min(60.0, f.Vy + 12.0 * dt);
+                f.Y += f.Vy * dt;
+                if (f.Rtf != null) f.Rtf.Angle = Math.Sin(f.Phase) * 36.0;
+                if (f.Shape != null)
+                {
+                    f.Shape.Opacity = Math.Max(0.0, Math.Min(1.0, f.Life * 1.2));
+                    Canvas.SetLeft(f.Shape, f.X);
+                    Canvas.SetTop(f.Shape, f.Y);
+                }
+                if (f.Life <= 0.0 || (_groundY > 0 && f.Y >= _groundY - 2.0))
+                {
+                    if (f.Shape != null) _canvas.Children.Remove(f.Shape);
+                    _feathers.RemoveAt(i);
+                }
+            }
+        }
+
+        void AddPetal(bool randomY)
+        {
+            Flake f = new Flake();
+            f.Kind = 1;
+            f.R = 4.0;
+            f.Speed = 12 + _rng.NextDouble() * 30;
+            f.SwayAmp = 20 + _rng.NextDouble() * 40;
+            f.Phase = _rng.NextDouble() * Math.PI * 2;
+            f.SwaySpeed = 1.2 + _rng.NextDouble() * 1.6;
+            f.Opacity = 0.7 + _rng.NextDouble() * 0.3;
+            f.BaseX = _rng.NextDouble() * (W() + 80);
+            f.X = f.BaseX;
+            f.Y = randomY ? _rng.NextDouble() * (H() + 80) : -10 - _rng.NextDouble() * 40;
+            f.RotSpeed = -90 + _rng.NextDouble() * 180;
+
+            Color[] tints = new Color[]
+            {
+                Color.FromRgb(255, 183, 213),
+                Color.FromRgb(255, 214, 232),
+                Color.FromRgb(250, 240, 245),
+                Color.FromRgb(255, 168, 200)
+            };
+            f.Tint = tints[_rng.Next(tints.Length)];
+
+            Ellipse shape = new Ellipse { Width = 7.5, Height = 4.8 };
+            shape.Fill = new LinearGradientBrush(Color.FromRgb(255, 236, 244), f.Tint, 90.0);
+            shape.Opacity = f.Opacity;
+            RotateTransform rt = new RotateTransform(_rng.NextDouble() * 360.0);
+            shape.RenderTransform = rt;
+            shape.RenderTransformOrigin = new Point(0.5, 0.5);
+            f.Shape = shape;
+            f.Rtf = rt;
+            f.Rot = rt.Angle;
+
+            _flakes.Add(f);
+            _canvas.Children.Add(shape);
+        }
+
+        void AddLeaf(bool randomY)
+        {
+            Flake f = new Flake();
+            f.Kind = 2;
+            f.R = 5.0;
+            f.Speed = 25 + _rng.NextDouble() * 40;
+            f.SwayAmp = 25 + _rng.NextDouble() * 55;
+            f.Phase = _rng.NextDouble() * Math.PI * 2;
+            f.SwaySpeed = 0.8 + _rng.NextDouble() * 1.4;
+            f.Opacity = 0.85;
+            f.BaseX = _rng.NextDouble() * (W() + 80);
+            f.X = f.BaseX;
+            f.Y = randomY ? _rng.NextDouble() * (H() + 80) : -12 - _rng.NextDouble() * 40;
+            f.RotSpeed = -140 + _rng.NextDouble() * 280;
+
+            Color[] tints = new Color[]
+            {
+                Color.FromRgb(200, 90, 40),
+                Color.FromRgb(224, 130, 50),
+                Color.FromRgb(240, 180, 60),
+                Color.FromRgb(150, 70, 35),
+                Color.FromRgb(190, 110, 45)
+            };
+            f.Tint = tints[_rng.Next(tints.Length)];
+            Color light = Color.FromRgb(
+                (byte)Math.Min(255, f.Tint.R + 45),
+                (byte)Math.Min(255, f.Tint.G + 45),
+                (byte)Math.Min(255, f.Tint.B + 45));
+
+            Ellipse shape = new Ellipse { Width = 11.0, Height = 6.5 };
+            shape.Fill = new LinearGradientBrush(light, f.Tint, 45.0);
+            shape.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
+            shape.StrokeThickness = 0.6;
+            shape.Opacity = f.Opacity;
+            RotateTransform rt = new RotateTransform(_rng.NextDouble() * 360.0);
+            shape.RenderTransform = rt;
+            shape.RenderTransformOrigin = new Point(0.5, 0.5);
+            f.Shape = shape;
+            f.Rtf = rt;
+            f.Rot = rt.Angle;
+
+            _flakes.Add(f);
+            _canvas.Children.Add(shape);
+        }
+
+        void AddRaindrop(bool randomY)
+        {
+            Flake f = new Flake();
+            f.Kind = 3;
+            f.R = 2.0;
+            f.Speed = 460 + _rng.NextDouble() * 260;
+            f.SwayAmp = 4 + _rng.NextDouble() * 8;
+            f.Phase = _rng.NextDouble() * Math.PI * 2;
+            f.SwaySpeed = 1.4 + _rng.NextDouble() * 1.2;
+            f.Opacity = 0.5 + _rng.NextDouble() * 0.4;
+            f.BaseX = _rng.NextDouble() * (W() + 80);
+            f.X = f.BaseX;
+            f.Y = randomY ? _rng.NextDouble() * (H() + 80) : -20 - _rng.NextDouble() * 100;
+
+            Line shape = new Line();
+            double len = 9 + _rng.NextDouble() * 7;
+            double dx = 1.6 + _rng.NextDouble() * 1.4;
+            shape.X1 = 0;
+            shape.Y1 = 0;
+            shape.X2 = dx;
+            shape.Y2 = len;
+            shape.Stroke = new SolidColorBrush(Color.FromArgb(175, 150, 195, 240));
+            shape.StrokeThickness = 1.4;
+            shape.StrokeEndLineCap = PenLineCap.Round;
+            shape.Opacity = f.Opacity;
+            f.Shape = shape;
+            f.Rtf = null;
+
+            _flakes.Add(f);
+            _canvas.Children.Add(shape);
+        }
+
+        void ShowSeasonPicker()
+        {
+            try
+            {
+                Window picker = new Window();
+                picker.Title = "DesktopSnow";
+                picker.Width = 420;
+                picker.Height = 300;
+                picker.ResizeMode = ResizeMode.NoResize;
+                picker.WindowStyle = WindowStyle.None;
+                picker.WindowStartupLocation = WindowStartupLocation.CenterScreen;
+                picker.Topmost = true;
+                picker.Background = new SolidColorBrush(Color.FromRgb(22, 20, 31));
+
+                Grid root = new Grid();
+                root.Margin = new Thickness(14);
+                picker.Content = root;
+                root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Auto) });
+                root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+                TextBlock title = new TextBlock();
+                title.Text = "\u0412\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u0441\u0435\u0437\u043e\u043d";
+                title.FontSize = 15;
+                title.FontWeight = FontWeights.Bold;
+                title.Foreground = new SolidColorBrush(Color.FromRgb(214, 190, 255));
+                title.Margin = new Thickness(6, 2, 0, 12);
+                Grid.SetRow(title, 0);
+                root.Children.Add(title);
+
+                System.Windows.Controls.Primitives.UniformGrid ug = new System.Windows.Controls.Primitives.UniformGrid();
+                ug.Rows = 2;
+                ug.Columns = 2;
+                Grid.SetRow(ug, 1);
+                root.Children.Add(ug);
+
+                Season[] seasons = new Season[] { Season.Winter, Season.Spring, Season.Summer, Season.Autumn };
+                string[] names = new string[] { "\u0417\u0438\u043c\u0430", "\u0412\u0435\u0441\u043d\u0430", "\u041b\u0435\u0442\u043e", "\u041e\u0441\u0435\u043d\u044c" };
+                string[] descs = new string[]
+                {
+                    "\u0421\u043d\u0435\u0433, \u0414\u0435\u0434 \u041c\u043e\u0440\u043e\u0437 \u0438 \u0413\u0440\u0438\u043d\u0447",
+                    "\u041b\u0435\u043f\u0435\u0441\u0442\u043a\u0438 \u0438 \u0431\u0430\u0431\u043e\u0447\u043a\u0430",
+                    "\u0414\u043e\u0436\u0434\u044c \u0438 \u043f\u0442\u0438\u0446\u0430",
+                    "\u041b\u0438\u0441\u0442\u044c\u044f \u0438 \u0432\u0435\u0442\u0435\u0440"
+                };
+
+                for (int i = 0; i < seasons.Length; i++)
+                {
+                    Season picked = seasons[i];
+                    bool active = (seasons[i] == _season);
+                    Color baseC = active ? Color.FromRgb(150, 100, 255) : Color.FromRgb(108, 70, 200);
+                    string name = names[i];
+                    string desc = descs[i];
+
+                    Border btn = new Border();
+                    btn.Background = new SolidColorBrush(baseC);
+                    btn.CornerRadius = new CornerRadius(10.0);
+                    btn.Margin = new Thickness(8);
+                    btn.Cursor = System.Windows.Input.Cursors.Hand;
+
+                    StackPanel sp = new StackPanel();
+                    sp.VerticalAlignment = VerticalAlignment.Center;
+                    sp.HorizontalAlignment = HorizontalAlignment.Center;
+
+                    TextBlock big = new TextBlock();
+                    big.Text = name;
+                    big.FontSize = 17;
+                    big.FontWeight = FontWeights.Bold;
+                    big.Foreground = Brushes.White;
+                    big.HorizontalAlignment = HorizontalAlignment.Center;
+                    sp.Children.Add(big);
+
+                    TextBlock small = new TextBlock();
+                    small.Text = desc;
+                    small.FontSize = 11;
+                    small.Foreground = new SolidColorBrush(Color.FromRgb(214, 202, 238));
+                    small.HorizontalAlignment = HorizontalAlignment.Center;
+                    sp.Children.Add(small);
+
+                    btn.Child = sp;
+                    btn.MouseEnter += delegate
+                    {
+                        btn.Background = new SolidColorBrush(Color.FromRgb(130, 90, 230));
+                    };
+                    btn.MouseLeave += delegate
+                    {
+                        btn.Background = new SolidColorBrush(baseC);
+                    };
+                    btn.MouseLeftButtonUp += delegate
+                    {
+                        try { ApplySeason(picked); }
+                        catch (Exception ex) { Log("apply season failed: " + ex.Message); }
+                        try { picker.Close(); } catch (Exception) { }
+                    };
+                    ug.Children.Add(btn);
+                }
+
+                picker.Show();
+            }
+            catch (Exception ex)
+            {
+                Log("season picker failed: " + ex.Message);
             }
         }
 
@@ -945,6 +1655,7 @@ namespace DesktopSnow
 
         bool InSnowZone(double x, double y)
         {
+            if (_season != Season.Winter) return false;
             if (_depths == null || _groundY <= 0.0) return false;
             if (y >= _groundY) return false;
             return y >= _groundY - _depths[DriftIndexFor(x)] - 6.0;
@@ -1583,9 +2294,8 @@ namespace DesktopSnow
             _groundY = SystemParameters.WorkArea.Bottom - SystemParameters.VirtualScreenTop;
 
             _drift = new Polygon();
-            _drift.Fill = new LinearGradientBrush(
-                Color.FromRgb(245, 250, 255), Color.FromRgb(225, 235, 250), 90.0);
-            _drift.Opacity = 0.95;
+            _drift.Fill = new LinearGradientBrush(SeasonDriftTop(), SeasonDriftBottom(), 90.0);
+            _drift.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
             System.Windows.Controls.Panel.SetZIndex(_drift, 50);
             _canvas.Children.Insert(0, _drift);
             UpdateDriftShape();
@@ -1637,7 +2347,16 @@ namespace DesktopSnow
 
         void AddFlake(bool randomY)
         {
+            if (_season == Season.Spring) AddPetal(randomY);
+            else if (_season == Season.Summer) AddRaindrop(randomY);
+            else if (_season == Season.Autumn) AddLeaf(randomY);
+            else AddSnowflake(randomY);
+        }
+
+        void AddSnowflake(bool randomY)
+        {
             Flake f = new Flake();
+            f.Kind = 0;
             f.R = 1.0 + _rng.NextDouble() * 3.2;
             f.Speed = 15 + _rng.NextDouble() * 45 + (f.R - 1.0) * 12;
             f.SwayAmp = 10 + _rng.NextDouble() * 40;
@@ -1675,6 +2394,10 @@ namespace DesktopSnow
             _clock.Restart();
             _t += dt;
             _wind = Math.Sin(_t / 6.5) * 18 + Math.Sin(_t / 2.3) * 6;
+            if (_season == Season.Autumn)
+            {
+                _wind = _wind * 2.0 + Math.Sin(_t / 3.7) * 16.0;
+            }
 
 
             if (_flakes.Count < _targetCount && _rng.NextDouble() < 0.4) AddFlake(false);
@@ -1750,17 +2473,20 @@ namespace DesktopSnow
             _bulbPhase++;
             if (_bulbPhase % 33 == 0) ToggleTreeLights();
 
-            _fireworkTimer -= dt;
-            if (_fireworkTimer <= 0.0)
+            if (_season == Season.Winter)
             {
-                _fireworkTimer = 45.0 + _rng.NextDouble() * 45.0;
-                if (_rng.NextDouble() < 0.7) SpawnRocket();
-            }
-            _starTimer -= dt;
-            if (_starTimer <= 0.0)
-            {
-                _starTimer = 40.0 + _rng.NextDouble() * 55.0;
-                SpawnShootingStar();
+                _fireworkTimer -= dt;
+                if (_fireworkTimer <= 0.0)
+                {
+                    _fireworkTimer = 45.0 + _rng.NextDouble() * 45.0;
+                    if (_rng.NextDouble() < 0.7) SpawnRocket();
+                }
+                _starTimer -= dt;
+                if (_starTimer <= 0.0)
+                {
+                    _starTimer = 40.0 + _rng.NextDouble() * 55.0;
+                    SpawnShootingStar();
+                }
             }
             UpdateRockets(dt);
             UpdateStars(dt);
@@ -1820,24 +2546,43 @@ namespace DesktopSnow
                 f.Phase += dt * f.SwaySpeed;
                 f.Y += f.Speed * dt;
                 f.X = f.BaseX + Math.Sin(f.Phase) * f.SwayAmp + _wind;
+                if (f.Rtf != null)
+                {
+                    f.Rot += f.RotSpeed * dt;
+                    f.Rtf.Angle = f.Rot;
+                }
 
                 bool roofLanded = false;
-                for (int ri = 0; ri < _roofs.Count; ri++)
+                if (f.Kind != 3)
                 {
-                    Roof r = _roofs[ri];
-                    if (r.Depths == null) continue;
-                    if (f.X >= r.L && f.X <= r.R && oldY <= r.T && f.Y >= r.T)
+                    for (int ri = 0; ri < _roofs.Count; ri++)
                     {
-                        if (IsRoofOccluded(r, f.X)) continue;
-                        DepositRoof(r, f.X, f.R * 5.0);
-                        roofLanded = true;
-                        break;
+                        Roof r = _roofs[ri];
+                        if (r.Depths == null) continue;
+                        if (f.X >= r.L && f.X <= r.R && oldY <= r.T && f.Y >= r.T)
+                        {
+                            if (IsRoofOccluded(r, f.X)) continue;
+                            DepositRoof(r, f.X, f.R * 5.0);
+                            roofLanded = true;
+                            break;
+                        }
                     }
                 }
 
                 if (!roofLanded && f.Y >= _groundY - _depths[DriftIndexFor(f.X)])
                 {
-                    DepositSnow(f.X, f.R * 5.0);
+                    if (f.Kind == 3)
+                    {
+                        int wet = DriftIndexFor(f.X);
+                        if (_depths[wet] > 1.0 && _rng.NextDouble() < 0.10)
+                        {
+                            SpawnSparkle(f.X, _groundY - _depths[wet]);
+                        }
+                    }
+                    else
+                    {
+                        DepositSnow(f.X, f.R * 5.0);
+                    }
                     roofLanded = true;
                 }
 
@@ -1852,23 +2597,37 @@ namespace DesktopSnow
             for (int i = _flakes.Count - 1; i >= 0; i--)
             {
                 Flake f = _flakes[i];
-                Canvas.SetLeft(f.Shape, f.X - f.R);
-                Canvas.SetTop(f.Shape, f.Y - f.R);
+                if (f.Kind == 3)
+                {
+                    Canvas.SetLeft(f.Shape, f.X);
+                    Canvas.SetTop(f.Shape, f.Y);
+                }
+                else
+                {
+                    Canvas.SetLeft(f.Shape, f.X - f.R);
+                    Canvas.SetTop(f.Shape, f.Y - f.R);
+                }
             }
 
             SantaTick(dt);
             GrinchTick(dt);
+            SeasonTick(dt);
         }
 
         void SantaTick(double dt)
         {
-            _santaCheckTimer += dt;
-            if (_santaCheckTimer >= 30.0)
+            bool activeTrain = _trainActive || _trainDowned;
+            if (_season != Season.Winter && !activeTrain) return;
+            if (_season == Season.Winter)
             {
-                _santaCheckTimer = 0.0;
-                if (!_trainActive && _rng.NextDouble() < 0.25)
+                _santaCheckTimer += dt;
+                if (_santaCheckTimer >= 30.0)
                 {
-                    SpawnTrain();
+                    _santaCheckTimer = 0.0;
+                    if (!_trainActive && _rng.NextDouble() < 0.25)
+                    {
+                        SpawnTrain();
+                    }
                 }
             }
 
@@ -2671,7 +3430,7 @@ namespace DesktopSnow
             EnumWindows(_enumProc, IntPtr.Zero);
 
             _roofSet.Clear();
-            if (!_fullscreenPresent)
+            if (!_fullscreenPresent && _season != Season.Summer)
             {
                 for (int k = 0; k < _enumList.Count; k++)
                 {
@@ -2891,8 +3650,8 @@ namespace DesktopSnow
                 if (r.Poly == null)
                 {
                     r.Poly = new Polygon();
-                    r.Poly.Fill = new SolidColorBrush(Color.FromRgb(245, 250, 255));
-                    r.Poly.Opacity = 0.95;
+                    r.Poly.Fill = new SolidColorBrush(SeasonDriftTop());
+                    r.Poly.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
                     System.Windows.Controls.Panel.SetZIndex(r.Poly, 50);
                     _roofCanvas.Children.Add(r.Poly);
                 }
