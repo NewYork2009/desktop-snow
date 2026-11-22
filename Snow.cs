@@ -217,6 +217,8 @@ namespace DesktopSnow
         bool _butterflyEnabled = true;
         Window _settingsWin;
         IntPtr _settingsHwnd;
+        System.Windows.Controls.Primitives.UniformGrid _ugA;
+        System.Windows.Controls.Primitives.UniformGrid _ugT;
         readonly Random _rng = new Random();
         int _targetCount = 180;
         SnowMode _mode = SnowMode.DesktopOnly;
@@ -1365,9 +1367,10 @@ namespace DesktopSnow
                 win.Height = 580;
                 win.ResizeMode = ResizeMode.NoResize;
                 win.WindowStyle = WindowStyle.None;
+                win.AllowsTransparency = true;
                 win.WindowStartupLocation = WindowStartupLocation.CenterScreen;
                 win.Topmost = true;
-                win.Background = new SolidColorBrush(Color.FromRgb(22, 20, 31));
+                win.Background = Brushes.Transparent;
                 if (_settingsWin != null)
                 {
                     try { _settingsWin.Activate(); } catch (Exception) { }
@@ -1386,9 +1389,21 @@ namespace DesktopSnow
                     }
                 };
 
+                Border shell = new Border();
+                shell.CornerRadius = new CornerRadius(16.0);
+                shell.BorderThickness = new Thickness(1.0);
+                shell.BorderBrush = new SolidColorBrush(Color.FromRgb(108, 70, 200));
+                LinearGradientBrush shellBg = new LinearGradientBrush();
+                shellBg.StartPoint = new Point(0, 0);
+                shellBg.EndPoint = new Point(0, 1);
+                shellBg.GradientStops.Add(new GradientStop(Color.FromRgb(36, 27, 51), 0.0));
+                shellBg.GradientStops.Add(new GradientStop(Color.FromRgb(20, 16, 29), 1.0));
+                shell.Background = shellBg;
+                win.Content = shell;
+
                 Grid root = new Grid();
-                root.Margin = new Thickness(14);
-                win.Content = root;
+                root.Margin = new Thickness(16);
+                shell.Child = root;
                 for (int i = 0; i < 5; i++)
                 {
                     RowDefinition rd = new RowDefinition();
@@ -1420,28 +1435,53 @@ namespace DesktopSnow
                 hg.ColumnDefinitions.Add(hc1);
                 hg.ColumnDefinitions.Add(hc2);
 
+                StackPanel hdrBox = new StackPanel();
+                hdrBox.Orientation = Orientation.Horizontal;
+                hdrBox.VerticalAlignment = VerticalAlignment.Center;
+                Grid.SetColumn(hdrBox, 0);
+
+                TextBlock flake = new TextBlock();
+                flake.Text = "\u2744 ";
+                flake.FontSize = 15;
+                flake.Foreground = new SolidColorBrush(Color.FromRgb(150, 100, 255));
+                flake.VerticalAlignment = VerticalAlignment.Center;
+                hdrBox.Children.Add(flake);
+
                 TextBlock hdr = new TextBlock();
                 hdr.Text = "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 DesktopSnow";
                 hdr.FontSize = 15;
                 hdr.FontWeight = FontWeights.Bold;
                 hdr.Foreground = new SolidColorBrush(Color.FromRgb(214, 190, 255));
                 hdr.VerticalAlignment = VerticalAlignment.Center;
-                Grid.SetColumn(hdr, 0);
-                hg.Children.Add(hdr);
+                hdrBox.Children.Add(hdr);
+                hg.Children.Add(hdrBox);
 
-                Button close = new Button();
-                close.Content = "\u00d7";
+                Border close = new Border();
                 close.Width = 26;
                 close.Height = 26;
-                close.Foreground = Brushes.White;
-                close.Background = new SolidColorBrush(Color.FromRgb(40, 34, 58));
-                close.BorderBrush = new SolidColorBrush(Color.FromRgb(108, 70, 200));
+                close.CornerRadius = new CornerRadius(13.0);
+                close.Background = new SolidColorBrush(Color.FromRgb(44, 36, 64));
                 close.Cursor = System.Windows.Input.Cursors.Hand;
-                Grid.SetColumn(close, 1);
-                close.Click += delegate
+                TextBlock closeX = new TextBlock();
+                closeX.Text = "\u00d7";
+                closeX.FontSize = 15;
+                closeX.Foreground = Brushes.White;
+                closeX.HorizontalAlignment = HorizontalAlignment.Center;
+                closeX.VerticalAlignment = VerticalAlignment.Center;
+                close.Child = closeX;
+                close.MouseEnter += delegate
+                {
+                    close.Background = new SolidColorBrush(Color.FromRgb(200, 70, 90));
+                };
+                close.MouseLeave += delegate
+                {
+                    close.Background = new SolidColorBrush(Color.FromRgb(44, 36, 64));
+                };
+                close.MouseLeftButtonUp += delegate
                 {
                     try { win.Close(); } catch (Exception) { }
                 };
+                Grid.SetColumn(close, 1);
                 hg.Children.Add(close);
 
                 StackPanel secSeason = new StackPanel();
@@ -1462,16 +1502,17 @@ namespace DesktopSnow
                 {
                     int idx = i;
                     Season picked = seasons[idx];
-                    Color baseC = (seasons[idx] == _season) ? Color.FromRgb(150, 100, 255) : Color.FromRgb(108, 70, 200);
                     string name = names[idx];
                     string desc = descs[idx];
 
                     Border btn = new Border();
-                    btn.Background = new SolidColorBrush(baseC);
-                    btn.CornerRadius = new CornerRadius(10.0);
+                    btn.CornerRadius = new CornerRadius(12.0);
                     btn.Margin = new Thickness(6);
-                    btn.Height = 56;
+                    btn.Height = 58;
                     btn.Cursor = System.Windows.Input.Cursors.Hand;
+                    btn.Background = (seasons[idx] == _season) ? SeasonBrush(true) : SeasonBrush(false);
+                    btn.BorderThickness = new Thickness(1.5);
+                    btn.BorderBrush = (seasons[idx] == _season) ? new SolidColorBrush(Color.FromRgb(230, 214, 255)) : Brushes.Transparent;
 
                     StackPanel sp = new StackPanel();
                     sp.VerticalAlignment = VerticalAlignment.Center;
@@ -1495,11 +1536,11 @@ namespace DesktopSnow
                     btn.Child = sp;
                     btn.MouseEnter += delegate
                     {
-                        btn.Background = new SolidColorBrush(Color.FromRgb(130, 90, 230));
+                        btn.Background = SeasonBrushHover(seasons[idx] == _season);
                     };
                     btn.MouseLeave += delegate
                     {
-                        btn.Background = new SolidColorBrush(seasons[idx] == _season ? Color.FromRgb(150, 100, 255) : Color.FromRgb(108, 70, 200));
+                        btn.Background = (seasons[idx] == _season) ? SeasonBrush(true) : SeasonBrush(false);
                     };
                     btn.MouseLeftButtonUp += delegate
                     {
@@ -1507,9 +1548,10 @@ namespace DesktopSnow
                         catch (Exception ex) { Log("apply season failed: " + ex.Message); }
                         for (int k = 0; k < seasonBtns.Count; k++)
                         {
-                            Color nc = (seasons[k] == _season) ? Color.FromRgb(150, 100, 255) : Color.FromRgb(108, 70, 200);
-                            seasonBtns[k].Background = new SolidColorBrush(nc);
+                            seasonBtns[k].Background = (seasons[k] == _season) ? SeasonBrush(true) : SeasonBrush(false);
+                            seasonBtns[k].BorderBrush = (seasons[k] == _season) ? new SolidColorBrush(Color.FromRgb(230, 214, 255)) : Brushes.Transparent;
                         }
+                        FillSeasonControls();
                     };
                     seasonBtns.Add(btn);
                     ugS.Children.Add(btn);
@@ -1533,7 +1575,9 @@ namespace DesktopSnow
                 ugT.Columns = 2;
                 secTog.Children.Add(ugT);
 
-                FillSeasonControls(ugA, ugT);
+                _ugA = ugA;
+                _ugT = ugT;
+                FillSeasonControls();
 
                 StackPanel secDen = new StackPanel();
                 Grid.SetRow(secDen, 4);
@@ -1575,8 +1619,11 @@ namespace DesktopSnow
             }
         }
 
-        void FillSeasonControls(System.Windows.Controls.Primitives.UniformGrid ugA, System.Windows.Controls.Primitives.UniformGrid ugT)
+        void FillSeasonControls()
         {
+            if (_ugA == null || _ugT == null) return;
+            System.Windows.Controls.Primitives.UniformGrid ugA = _ugA;
+            System.Windows.Controls.Primitives.UniformGrid ugT = _ugT;
             ugA.Children.Clear();
             ugT.Children.Clear();
             if (_season == Season.Winter)
@@ -1680,6 +1727,45 @@ namespace DesktopSnow
             }));
         }
 
+        Brush SeasonBrush(bool active)
+        {
+            LinearGradientBrush lg = new LinearGradientBrush();
+            lg.StartPoint = new Point(0, 0);
+            lg.EndPoint = new Point(0, 1);
+            if (active)
+            {
+                lg.GradientStops.Add(new GradientStop(Color.FromRgb(173, 123, 255), 0.0));
+                lg.GradientStops.Add(new GradientStop(Color.FromRgb(126, 77, 222), 1.0));
+            }
+            else
+            {
+                lg.GradientStops.Add(new GradientStop(Color.FromRgb(112, 76, 198), 0.0));
+                lg.GradientStops.Add(new GradientStop(Color.FromRgb(88, 55, 160), 1.0));
+            }
+            return lg;
+        }
+
+        Brush SeasonBrushHover(bool active)
+        {
+            if (active) return SeasonBrush(true);
+            LinearGradientBrush lg = new LinearGradientBrush();
+            lg.StartPoint = new Point(0, 0);
+            lg.EndPoint = new Point(0, 1);
+            lg.GradientStops.Add(new GradientStop(Color.FromRgb(132, 92, 225), 0.0));
+            lg.GradientStops.Add(new GradientStop(Color.FromRgb(104, 66, 190), 1.0));
+            return lg;
+        }
+
+        Brush ActionBrush()
+        {
+            LinearGradientBrush lg = new LinearGradientBrush();
+            lg.StartPoint = new Point(0, 0);
+            lg.EndPoint = new Point(0, 1);
+            lg.GradientStops.Add(new GradientStop(Color.FromRgb(104, 66, 196), 0.0));
+            lg.GradientStops.Add(new GradientStop(Color.FromRgb(76, 48, 146), 1.0));
+            return lg;
+        }
+
         TextBlock MakeSectionLabel(string caption)
         {
             TextBlock tb = new TextBlock();
@@ -1694,8 +1780,8 @@ namespace DesktopSnow
         Border MakeActionButton(string caption, Action onClick)
         {
             Border b = new Border();
-            b.Background = new SolidColorBrush(Color.FromRgb(70, 46, 130));
-            b.CornerRadius = new CornerRadius(8.0);
+            b.Background = ActionBrush();
+            b.CornerRadius = new CornerRadius(10.0);
             b.Margin = new Thickness(5);
             b.Height = 34;
             b.Cursor = System.Windows.Input.Cursors.Hand;
@@ -1711,11 +1797,11 @@ namespace DesktopSnow
 
             b.MouseEnter += delegate
             {
-                b.Background = new SolidColorBrush(Color.FromRgb(92, 62, 165));
+                b.Background = new SolidColorBrush(Color.FromRgb(128, 86, 222));
             };
             b.MouseLeave += delegate
             {
-                b.Background = new SolidColorBrush(Color.FromRgb(70, 46, 130));
+                b.Background = ActionBrush();
             };
             b.MouseLeftButtonUp += delegate
             {
