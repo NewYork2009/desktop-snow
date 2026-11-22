@@ -149,6 +149,7 @@ namespace DesktopSnow
         double _t;
         double _wind;
         double _sparkleTimer = 0.4;
+        double _decoTimer = 1.2;
         SnowBall _ballHeld;
         double _ballVx;
         double _ballVy;
@@ -181,6 +182,7 @@ namespace DesktopSnow
         readonly List<Ellipse> _treeBulbs = new List<Ellipse>();
         readonly List<Color> _treeBulbColors = new List<Color>();
         readonly List<Sparkle> _sparkles = new List<Sparkle>();
+        readonly List<DriftDeco> _decos = new List<DriftDeco>();
         SWF.NotifyIcon _tray;
         SWF.MenuItem _miAutostart;
         SWF.MenuItem _miScreensaver;
@@ -350,6 +352,17 @@ namespace DesktopSnow
             public double Life;
             public double MaxLife;
             public Ellipse Shape;
+        }
+
+        class DriftDeco
+        {
+            public double X;
+            public double Y;
+            public double Life;
+            public double MaxLife;
+            public Roof Ref;
+            public bool OnRoof;
+            public FrameworkElement Shape;
         }
 
         class Rocket
@@ -1524,7 +1537,7 @@ namespace DesktopSnow
                 secSeason.Children.Add(ugS);
 
                 Season[] seasons = new Season[] { Season.Winter, Season.Spring, Season.Summer, Season.Autumn };
-                string[] names = new string[] { "\u0417\u0438\u043c\u0430", "\u0412\u0435\u0441\u043d\u0430", "\u041b\u0435\u0442\u043e", "\u041e\u0441\u0435\u043d\u044c" };
+                string[] names = new string[] { "\u0421\u043d\u0435\u0433", "\u041b\u0435\u043f\u0435\u0441\u0442\u043a\u0438 \u0438 \u0431\u0430\u0431\u043e\u0447\u043a\u0438", "\u0414\u043e\u0436\u0434\u044c", "\u0421\u0443\u0445\u0438\u0435 \u043b\u0438\u0441\u0442\u044c\u044f" };
                 string[] descs = new string[] { "\u0421\u043d\u0435\u0433, \u0414\u0435\u0434 \u041c\u043e\u0440\u043e\u0437 \u0438 \u0413\u0440\u0438\u043d\u0447", "\u041b\u0435\u043f\u0435\u0441\u0442\u043a\u0438 \u0438 \u0431\u0430\u0431\u043e\u0447\u043a\u0430", "\u0414\u043e\u0436\u0434\u044c \u0438 \u043f\u0442\u0438\u0446\u0430", "\u041b\u0438\u0441\u0442\u044c\u044f \u0438 \u0432\u0435\u0442\u0435\u0440" };
                 List<Border> seasonBtns = new List<Border>();
                 for (int i = 0; i < seasons.Length; i++)
@@ -2931,6 +2944,13 @@ namespace DesktopSnow
                     }
                 }
             }
+            _decoTimer -= dt;
+            if (_decoTimer <= 0.0)
+            {
+                _decoTimer = 0.25 + _rng.NextDouble() * 0.4;
+                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 110) SpawnDriftDeco();
+            }
+            UpdateDecos(dt);
             UpdateSparkles(dt);
             UpdateIcicles(dt);
 
@@ -3983,13 +4003,17 @@ namespace DesktopSnow
                 }
             }
 
-            if (_driftTick % 2 == 0) RoofMeltAndSmooth();
+            RoofMeltAndSmooth(_driftTick % 2 == 0);
             UpdateRoofShapes();
         }
 
         void ReleaseRoofSnow(Roof roof, bool quiet)
         {
             if (roof.Depths == null || _canvas == null) return;
+            for (int i = _decos.Count - 1; i >= 0; i--)
+            {
+                if (_decos[i].OnRoof && _decos[i].Ref == roof) KillDeco(_decos[i], i);
+            }
             if (quiet)
             {
                 for (int i = 0; i < roof.Depths.Length; i++) roof.Depths[i] = 0.0;
@@ -4076,19 +4100,22 @@ namespace DesktopSnow
             }
         }
 
-        void RoofMeltAndSmooth()
+        void RoofMeltAndSmooth(bool melt)
         {
             double dt = 0.16;
             for (int ri = 0; ri < _roofs.Count; ri++)
             {
                 double[] dep = _roofs[ri].Depths;
                 if (dep == null) continue;
-                for (int i = 0; i < dep.Length; i++)
+                if (melt)
                 {
-                    double excess = dep[i] - DriftSoftCap;
-                    if (excess > 0.0) dep[i] -= (excess * 0.3) * dt;
-                    if (dep[i] > _maxDrift) dep[i] = _maxDrift;
-                    if (dep[i] < 0) dep[i] = 0;
+                    for (int i = 0; i < dep.Length; i++)
+                    {
+                        double excess = dep[i] - DriftSoftCap;
+                        if (excess > 0.0) dep[i] -= (excess * 0.3) * dt;
+                        if (dep[i] > _maxDrift) dep[i] = _maxDrift;
+                        if (dep[i] < 0) dep[i] = 0;
+                    }
                 }
                 for (int pass = 0; pass < 2; pass++)
                 {
@@ -4542,6 +4569,103 @@ namespace DesktopSnow
             _canvas.Children.Add(e);
         }
 
+        void SpawnDriftDeco()
+        {
+            if (_canvas == null || _roofCanvas == null) return;
+            bool onRoof = _roofs.Count > 0 && _rng.NextDouble() < 0.55;
+            DriftDeco d = new DriftDeco();
+            double x, y;
+            if (onRoof)
+            {
+                Roof rr = _roofs[_rng.Next(_roofs.Count)];
+                if (rr.Depths == null || rr.Depths.Length < 4) return;
+                int idx = _rng.Next(rr.Depths.Length);
+                if (rr.Depths[idx] < 2.5) return;
+                x = rr.L + idx * _driftSegment + _rng.NextDouble() * _driftSegment;
+                y = rr.T - rr.Depths[idx] + _rng.NextDouble() * 2.0 - 1.0;
+                d.Ref = rr;
+                d.OnRoof = true;
+            }
+            else
+            {
+                if (_depths == null || _groundY <= 0.0) return;
+                x = _rng.NextDouble() * W();
+                int si = DriftIndexFor(x);
+                if (_depths[si] < 2.5) return;
+                x += _rng.NextDouble() * _driftSegment - _driftSegment * 0.5;
+                y = _groundY - _depths[si] + _rng.NextDouble() * 2.0 - 1.0;
+            }
+            Color[] pal = new Color[] {
+                Color.FromRgb(178, 104, 44),
+                Color.FromRgb(204, 136, 58),
+                Color.FromRgb(232, 178, 96),
+                Color.FromRgb(148, 92, 46),
+                Color.FromRgb(118, 132, 56),
+                Color.FromRgb(160, 118, 52)
+            };
+            double w = 4.0 + _rng.NextDouble() * 4.0;
+            double h = w * (0.55 + _rng.NextDouble() * 0.25);
+            Polygon leaf = new Polygon();
+            leaf.Fill = new SolidColorBrush(pal[_rng.Next(pal.Length)]);
+            double a = _rng.NextDouble() * Math.PI;
+            double ca = Math.Cos(a), sa = Math.Sin(a);
+            double hw = w * 0.5, hh = h * 0.5;
+            Point c0 = new Point(-hw, 0.0);
+            Point c1 = new Point(0.0, -hh);
+            Point c2 = new Point(hw, 0.0);
+            Point c3 = new Point(0.0, hh);
+            leaf.Points = new PointCollection(new Point[] {
+                new Point(x + c0.X * ca - c0.Y * sa, y + c0.X * sa + c0.Y * ca),
+                new Point(x + c1.X * ca - c1.Y * sa, y + c1.X * sa + c1.Y * ca),
+                new Point(x + c2.X * ca - c2.Y * sa, y + c2.X * sa + c2.Y * ca),
+                new Point(x + c3.X * ca - c3.Y * sa, y + c3.X * sa + c3.Y * ca)
+            });
+            leaf.Opacity = 0.0;
+            d.Shape = leaf;
+            d.X = x;
+            d.Y = y;
+            d.MaxLife = 5.0 + _rng.NextDouble() * 6.0;
+            d.Life = d.MaxLife;
+            System.Windows.Controls.Panel.SetZIndex(leaf, 56);
+            Canvas.SetLeft(leaf, 0.0);
+            Canvas.SetTop(leaf, 0.0);
+            if (d.OnRoof) _roofCanvas.Children.Add(leaf);
+            else _canvas.Children.Add(leaf);
+            _decos.Add(d);
+        }
+
+        void UpdateDecos(double dt)
+        {
+            for (int i = _decos.Count - 1; i >= 0; i--)
+            {
+                DriftDeco d = _decos[i];
+                bool gone = false;
+                if (d.OnRoof && d.Ref != null && d.Ref.Depths == null) gone = true;
+                d.Life -= dt;
+                if (d.Life <= 0.0) gone = true;
+                if (gone)
+                {
+                    KillDeco(d, i);
+                    continue;
+                }
+                double fade = Math.Min(1.0, (d.MaxLife - d.Life) / 0.6);
+                fade = Math.Min(fade, d.Life / 1.2);
+                d.Shape.Opacity = 0.9 * Math.Max(0.0, fade);
+            }
+        }
+
+        void KillDeco(DriftDeco d, int i)
+        {
+            Canvas host = d.OnRoof ? _roofCanvas : _canvas;
+            if (host != null && d.Shape != null) host.Children.Remove(d.Shape);
+            _decos.RemoveAt(i);
+        }
+
+        void ClearDecos()
+        {
+            for (int i = _decos.Count - 1; i >= 0; i--) KillDeco(_decos[i], i);
+        }
+
         void BuildMoon()
         {
             if (_canvas == null) return;
@@ -4800,6 +4924,7 @@ namespace DesktopSnow
 
         void ClearAllSnow()
         {
+            ClearDecos();
             if (_depths != null)
             {
                 for (int i = 0; i < _depths.Length; i++) _depths[i] = 0.0;
