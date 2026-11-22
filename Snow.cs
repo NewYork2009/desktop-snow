@@ -133,6 +133,28 @@ namespace DesktopSnow
         double _t;
         double _wind;
         double _sparkleTimer = 0.4;
+        SnowBall _ballHeld;
+        double _ballVx;
+        double _ballVy;
+        double _ballLastX;
+        double _ballLastY;
+        uint _ballLastT;
+        readonly List<SnowBall> _balls = new List<SnowBall>();
+        readonly List<Snowman> _snowmen = new List<Snowman>();
+        Canvas _rabbit;
+        double _rabbitX;
+        double _rabbitDir = 1.0;
+        double _rabbitTarget;
+        int _rabbitState;
+        double _rabbitStateT;
+        double _rabbitPhase;
+        TextBlock _countdownText;
+        Rectangle _countdownBoard;
+        Canvas _nyBanner;
+        double _nyBannerLife = -1.0;
+        bool _nyDone;
+        double _showTimer = -1.0;
+        int _showLeft;
         readonly List<Rocket> _rockets = new List<Rocket>();
         readonly List<ShootingStar> _stars = new List<ShootingStar>();
         double _fireworkTimer = 22.0;
@@ -291,6 +313,38 @@ namespace DesktopSnow
             public double Life;
             public double MaxLife;
             public Line Shape;
+        }
+
+        class SnowBall
+        {
+            public double X;
+            public double Y;
+            public double Vx;
+            public double Vy;
+            public double R;
+            public bool Held;
+            public bool Flying;
+            public bool Standing;
+            public int Level;
+            public SnowBall Under;
+            public Canvas Shape;
+        }
+
+        class Snowman
+        {
+            public double X;
+            public Canvas Shape;
+        }
+
+        class Rabbit
+        {
+            public double X;
+            public double Dir;
+            public int State;
+            public double Target;
+            public double Phase;
+            public double StateT;
+            public Canvas Shape;
         }
 
 
@@ -650,10 +704,21 @@ namespace DesktopSnow
                     }
                     if (_grabbed == null)
                     {
+                        SnowBall pick = FindBall(mx, my);
+                        if (pick != null)
+                        {
+                            Dispatcher.BeginInvoke((Action)delegate { GrabBall(pick, mx, my); });
+                            return (IntPtr)1;
+                        }
                         SnowDrop tree = FindGrabbableTree(mx, my);
                         if (tree != null)
                         {
                             Dispatcher.BeginInvoke((Action)delegate { GrabTree(tree, mx, my); });
+                            return (IntPtr)1;
+                        }
+                        if (_ballHeld == null && InSnowZone(mx, my))
+                        {
+                            Dispatcher.BeginInvoke((Action)delegate { StartBall(mx, my); });
                             return (IntPtr)1;
                         }
                     }
@@ -668,6 +733,17 @@ namespace DesktopSnow
                 else if (msg == WM_LBUTTONUP && _grabbed != null)
                 {
                     Dispatcher.BeginInvoke((Action)delegate { ReleaseGrabbed(); });
+                }
+                else if (msg == WM_MOUSEMOVE && _ballHeld != null)
+                {
+                    double mx2 = info.pt.X - SystemParameters.VirtualScreenLeft;
+                    double my2 = info.pt.Y - SystemParameters.VirtualScreenTop;
+                    uint t2 = info.time;
+                    Dispatcher.BeginInvoke((Action)delegate { MoveBall(mx2, my2, t2); });
+                }
+                else if (msg == WM_LBUTTONUP && _ballHeld != null)
+                {
+                    Dispatcher.BeginInvoke((Action)delegate { ReleaseBall(); });
                 }
             }
             return CallNextHookEx(_hook, nCode, wParam, lParam);
@@ -776,6 +852,580 @@ namespace DesktopSnow
             Log("tree thrown, v=" + Math.Round(Math.Sqrt(d.Vx * d.Vx + d.Vy * d.Vy)));
         }
 
+        bool InSnowZone(double x, double y)
+        {
+            if (_depths == null || _groundY <= 0.0) return false;
+            return y >= _groundY - _depths[DriftIndexFor(x)] - 6.0;
+        }
+
+        SnowBall FindBall(double mx, double my)
+        {
+            for (int i = _balls.Count - 1; i >= 0; i--)
+            {
+                SnowBall b = _balls[i];
+                if (b.Held || b.Shape == null) continue;
+                if (Math.Abs(mx - (b.X + b.R)) < b.R + 8.0 &&
+                    Math.Abs(my - (b.Y + b.R)) < b.R + 8.0) return b;
+            }
+            return null;
+        }
+
+        Canvas BuildBallShape(double r)
+        {
+            Canvas c = new Canvas { Width = r * 2.0, Height = r * 2.0 };
+            Ellipse body = new Ellipse
+            {
+                Width = r * 2.0,
+                Height = r * 2.0,
+                Fill = new SolidColorBrush(Color.FromRgb(248, 250, 255)),
+                Stroke = new SolidColorBrush(Color.FromRgb(224, 232, 246)),
+                StrokeThickness = 1.0
+            };
+            Canvas.SetLeft(body, 0.0);
+            Canvas.SetTop(body, 0.0);
+            c.Children.Add(body);
+            Ellipse hi = new Ellipse
+            {
+                Width = r * 0.7,
+                Height = r * 0.55,
+                Fill = new SolidColorBrush(Color.FromArgb(120, 255, 255, 255))
+            };
+            Canvas.SetLeft(hi, r * 0.25);
+            Canvas.SetTop(hi, r * 0.2);
+            c.Children.Add(hi);
+            c.RenderTransformOrigin = new Point(0.0, 0.0);
+            c.RenderTransform = new ScaleTransform(1.0, 1.0);
+            return c;
+        }
+
+        void GrabBall(SnowBall b, double mx, double my)
+        {
+            if (b == null || b.Shape == null) return;
+            _ballHeld = b;
+            b.Held = true;
+            b.Standing = false;
+            b.Flying = false;
+            b.Under = null;
+            b.Level = 0;
+            b.Vx = 0.0;
+            b.Vy = 0.0;
+            b.X = mx - b.R;
+            b.Y = my - b.R;
+            Canvas.SetLeft(b.Shape, b.X);
+            Canvas.SetTop(b.Shape, b.Y);
+            System.Windows.Controls.Panel.SetZIndex(b.Shape, 85);
+            _ballVx = 0.0;
+            _ballVy = 0.0;
+            _ballLastX = mx;
+            _ballLastY = my;
+            _ballLastT = 0;
+            SnowSplash(mx, my, 8);
+            Log("snowball grabbed");
+        }
+
+        void StartBall(double mx, double my)
+        {
+            if (_canvas == null || _depths == null || _groundY <= 0.0) return;
+            foreach (SnowBall b in _balls)
+            {
+                if (b.Held) return;
+            }
+            double r = 9.0;
+            SnowBall nb = new SnowBall();
+            nb.R = r;
+            nb.Held = true;
+            nb.Standing = false;
+            nb.Flying = false;
+            nb.Vx = 0.0;
+            nb.Vy = 0.0;
+            nb.Level = 0;
+            nb.Under = null;
+            nb.Shape = BuildBallShape(r);
+            nb.X = mx - r;
+            nb.Y = my - r;
+            Canvas.SetLeft(nb.Shape, nb.X);
+            Canvas.SetTop(nb.Shape, nb.Y);
+            System.Windows.Controls.Panel.SetZIndex(nb.Shape, 85);
+            _balls.Add(nb);
+            _canvas.Children.Add(nb.Shape);
+            _ballHeld = nb;
+            _ballVx = 0.0;
+            _ballVy = 0.0;
+            _ballLastX = mx;
+            _ballLastY = my;
+            _ballLastT = 0;
+            SnowSplash(mx, my, 8);
+            Log("snowball started");
+        }
+
+        void MoveBall(double mx, double my, uint tstamp)
+        {
+            SnowBall b = _ballHeld;
+            if (b == null || !b.Held) return;
+            double dx = mx - _ballLastX;
+            if (b.R < 30.0)
+            {
+                double gr = Math.Min(2.5, Math.Abs(dx) * 0.05);
+                if (gr > 0.02)
+                {
+                    b.R += gr;
+                    ScaleTransform st = b.Shape.RenderTransform as ScaleTransform;
+                    if (st != null)
+                    {
+                        st.ScaleX = b.R / 9.0;
+                        st.ScaleY = b.R / 9.0;
+                    }
+                }
+            }
+            b.X = mx - b.R;
+            b.Y = my - b.R;
+            Canvas.SetLeft(b.Shape, b.X);
+            Canvas.SetTop(b.Shape, b.Y);
+            if (tstamp > _ballLastT)
+            {
+                double sdt = (tstamp - _ballLastT) / 1000.0;
+                if (sdt > 0.004 && sdt < 0.4)
+                {
+                    _ballVx = _ballVx * 0.6 + (dx / sdt) * 0.4;
+                    _ballVy = _ballVy * 0.6 + ((my - _ballLastY) / sdt) * 0.4;
+                }
+                _ballLastT = tstamp;
+            }
+            _ballLastX = mx;
+            _ballLastY = my;
+        }
+
+        void ReleaseBall()
+        {
+            SnowBall b = _ballHeld;
+            if (b == null) return;
+            _ballHeld = null;
+            b.Held = false;
+            double sp = Math.Sqrt(_ballVx * _ballVx + _ballVy * _ballVy);
+            if (sp > 250.0)
+            {
+                b.Flying = true;
+                double max = 1400.0;
+                b.Vx = Math.Max(-max, Math.Min(max, _ballVx));
+                b.Vy = Math.Max(-max, Math.Min(max, _ballVy * 0.8));
+                System.Windows.Controls.Panel.SetZIndex(b.Shape, 70);
+                Log("snowball thrown, v=" + Math.Round(sp));
+            }
+            else
+            {
+                SettleBall(b);
+            }
+        }
+
+        void SettleBall(SnowBall b)
+        {
+            if (_depths == null || _groundY <= 0.0)
+            {
+                _canvas.Children.Remove(b.Shape);
+                _balls.Remove(b);
+                return;
+            }
+            double cx = b.X + b.R;
+            SnowBall support = null;
+            for (int i = 0; i < _balls.Count; i++)
+            {
+                SnowBall s2 = _balls[i];
+                if (s2 == b || !s2.Standing) continue;
+                if (Math.Abs((s2.X + s2.R) - cx) < s2.R * 0.8)
+                {
+                    support = s2;
+                    break;
+                }
+            }
+            if (support != null && support.Level < 2)
+            {
+                b.Level = support.Level + 1;
+                b.Under = support;
+                b.X = support.X;
+                b.Y = support.Y - b.R * 2.0 + b.R * 0.25;
+                if (b.Level == 2 && support.Under != null)
+                {
+                    SnowBall baseB = support.Under;
+                    double sr = support.R;
+                    double hr = b.R;
+                    double scx = baseB.X + baseB.R;
+                    _balls.Remove(baseB);
+                    _balls.Remove(support);
+                    _balls.Remove(b);
+                    _canvas.Children.Remove(baseB.Shape);
+                    _canvas.Children.Remove(support.Shape);
+                    _canvas.Children.Remove(b.Shape);
+                    BuildSnowman(scx, baseB.R, sr, hr);
+                    SnowSplash(scx, _groundY - _depths[DriftIndexFor(scx)], 10);
+                    Log("snowman built");
+                    return;
+                }
+            }
+            else
+            {
+                b.Level = 0;
+                b.Under = null;
+                double landY = _groundY - _depths[DriftIndexFor(cx)];
+                b.Y = landY - b.R * 2.0 + b.R * 0.25;
+            }
+            b.Standing = true;
+            System.Windows.Controls.Panel.SetZIndex(b.Shape, 52);
+            Canvas.SetLeft(b.Shape, b.X);
+            Canvas.SetTop(b.Shape, b.Y);
+            SnowSplash(b.X + b.R, b.Y + b.R * 2.0, 5);
+        }
+
+        void UpdateBalls(double dt)
+        {
+            if (_canvas == null) return;
+            for (int i = _balls.Count - 1; i >= 0; i--)
+            {
+                SnowBall b = _balls[i];
+                if (b.Held || b.Standing || !b.Flying) continue;
+                b.Vy += 750.0 * dt;
+                b.X += b.Vx * dt;
+                b.Y += b.Vy * dt;
+                Canvas.SetLeft(b.Shape, b.X);
+                Canvas.SetTop(b.Shape, b.Y);
+                double bcx = b.X + b.R;
+                double bcy = b.Y + b.R;
+
+                if (_trainActive && !_trainDowned && _train != null)
+                {
+                    double tx = _trainX + ((_trainDir > 0) ? 120.0 : 50.0);
+                    if (Math.Abs(bcx - tx) < 150.0 && Math.Abs(bcy - _trainY) < 70.0)
+                    {
+                        _canvas.Children.Remove(b.Shape);
+                        _balls.RemoveAt(i);
+                        SnowSplash(bcx, bcy, 14);
+                        KnockDownTrain(bcx, bcy);
+                        continue;
+                    }
+                }
+
+                if (_grinchActive && !_grinchDead && _grinch != null)
+                {
+                    double gl = Canvas.GetLeft(_grinch);
+                    double gt = Canvas.GetTop(_grinch);
+                    if (bcx >= gl - 6.0 && bcx <= gl + 74.0 && bcy >= gt - 6.0 && bcy <= gt + 80.0)
+                    {
+                        _canvas.Children.Remove(b.Shape);
+                        _balls.RemoveAt(i);
+                        SnowSplash(bcx, bcy, 12);
+                        GrinchDie();
+                        continue;
+                    }
+                }
+
+                if (_depths == null || _groundY <= 0.0) continue;
+                double landY = _groundY - _depths[DriftIndexFor(bcx)];
+                if (b.Y + b.R * 2.0 >= landY - 2.0)
+                {
+                    _canvas.Children.Remove(b.Shape);
+                    _balls.RemoveAt(i);
+                    SnowSplash(bcx, landY, 12);
+                    if (b.R > 12.0) DepositSnow(bcx, 2.0);
+                    continue;
+                }
+                if (b.X < -80.0 || b.X > W() + 80.0 || b.Y > H() + 80.0)
+                {
+                    _canvas.Children.Remove(b.Shape);
+                    _balls.RemoveAt(i);
+                }
+            }
+        }
+
+        void BuildSnowman(double cx, double r0, double r1, double r2)
+        {
+            if (_canvas == null || _depths == null || _groundY <= 0.0) return;
+            double maxR = Math.Max(r0, Math.Max(r1, r2));
+            double width = maxR * 2.0 + 60.0;
+            double x0 = width / 2.0;
+            double cy0 = r0 * 2.0;
+            double cy1 = cy0 - (r0 + r1) * 0.75;
+            double cy2 = cy1 - (r1 + r2) * 0.75;
+            double topY = cy2 - r2;
+            double height = cy0 + r0 - 6.0;
+            Canvas man = new Canvas { Width = width, Height = height };
+            Brush fur = new SolidColorBrush(Color.FromRgb(249, 251, 255));
+            Brush line = new SolidColorBrush(Color.FromRgb(224, 232, 246));
+            Ellipse baseBall = new Ellipse { Width = r0 * 2.0, Height = r0 * 2.0, Fill = fur, Stroke = line, StrokeThickness = 1.0 };
+            Canvas.SetLeft(baseBall, x0 - r0);
+            Canvas.SetTop(baseBall, cy0 - r0);
+            man.Children.Add(baseBall);
+            Ellipse midBall = new Ellipse { Width = r1 * 2.0, Height = r1 * 2.0, Fill = fur, Stroke = line, StrokeThickness = 1.0 };
+            Canvas.SetLeft(midBall, x0 - r1);
+            Canvas.SetTop(midBall, cy1 - r1);
+            man.Children.Add(midBall);
+            Ellipse head = new Ellipse { Width = r2 * 2.0, Height = r2 * 2.0, Fill = fur, Stroke = line, StrokeThickness = 1.0 };
+            Canvas.SetLeft(head, x0 - r2);
+            Canvas.SetTop(head, cy2 - r2);
+            man.Children.Add(head);
+            Brush dot = new SolidColorBrush(Color.FromRgb(70, 65, 60));
+            for (int i = 0; i < 3; i++)
+            {
+                Ellipse btn = new Ellipse { Width = 4.0, Height = 4.0, Fill = dot };
+                Canvas.SetLeft(btn, x0 - 2.0);
+                Canvas.SetTop(btn, cy1 - r1 * 0.3 + i * r1 * 0.25);
+                man.Children.Add(btn);
+            }
+            Ellipse eyeL = new Ellipse { Width = 3.5, Height = 3.5, Fill = dot };
+            Canvas.SetLeft(eyeL, x0 - 6.5);
+            Canvas.SetTop(eyeL, cy2 - r2 * 0.35);
+            man.Children.Add(eyeL);
+            Ellipse eyeR = new Ellipse { Width = 3.5, Height = 3.5, Fill = dot };
+            Canvas.SetLeft(eyeR, x0 + 3.0);
+            Canvas.SetTop(eyeR, cy2 - r2 * 0.35);
+            man.Children.Add(eyeR);
+            Polygon carrot = new Polygon
+            {
+                Fill = new SolidColorBrush(Color.FromRgb(245, 140, 40)),
+                Points = new PointCollection
+                {
+                    new Point(x0 - 1.0, cy2 - 1.0),
+                    new Point(x0 + 13.0, cy2 + 3.0),
+                    new Point(x0 - 1.0, cy2 + 5.0)
+                }
+            };
+            man.Children.Add(carrot);
+            Brush stick = new SolidColorBrush(Color.FromRgb(110, 80, 50));
+            Line armL = new Line { X1 = x0 - r1 * 0.7, Y1 = cy1 - 2.0, X2 = x0 - r1 * 1.7, Y2 = cy1 - r1 * 0.8, Stroke = stick, StrokeThickness = 3.0, StrokeEndLineCap = PenLineCap.Round };
+            man.Children.Add(armL);
+            Line armR = new Line { X1 = x0 + r1 * 0.7, Y1 = cy1 - 2.0, X2 = x0 + r1 * 1.7, Y2 = cy1 - r1 * 0.8, Stroke = stick, StrokeThickness = 3.0, StrokeEndLineCap = PenLineCap.Round };
+            man.Children.Add(armR);
+            Polygon bucket = new Polygon
+            {
+                Fill = new SolidColorBrush(Color.FromRgb(200, 50, 50)),
+                Points = new PointCollection
+                {
+                    new Point(x0 - r2 * 0.6, topY + 3.0),
+                    new Point(x0 + r2 * 0.6, topY + 3.0),
+                    new Point(x0 + r2 * 0.42, topY - r2 * 0.75),
+                    new Point(x0 - r2 * 0.42, topY - r2 * 0.75)
+                }
+            };
+            man.Children.Add(bucket);
+            System.Windows.Controls.Panel.SetZIndex(man, 52);
+            Canvas.SetLeft(man, cx - width / 2.0);
+            Canvas.SetTop(man, _groundY - _depths[DriftIndexFor(cx)] - height + 4.0);
+            _canvas.Children.Add(man);
+            Snowman sm = new Snowman();
+            sm.X = cx;
+            sm.Shape = man;
+            _snowmen.Add(sm);
+            if (_snowmen.Count > 2)
+            {
+                Snowman old = _snowmen[0];
+                _snowmen.RemoveAt(0);
+                SnowSplash(old.X, Canvas.GetTop(old.Shape) + old.Shape.Height, 8);
+                _canvas.Children.Remove(old.Shape);
+            }
+        }
+
+
+        Canvas BuildRabbit()
+        {
+            Canvas c = new Canvas { Width = 46.0, Height = 46.0 };
+            Brush fur = new SolidColorBrush(Color.FromRgb(242, 240, 236));
+            Brush pink = new SolidColorBrush(Color.FromRgb(245, 190, 195));
+            Ellipse earL = new Ellipse { Width = 7.0, Height = 20.0, Fill = fur, RenderTransformOrigin = new Point(0.5, 1.0), RenderTransform = new RotateTransform(-12.0) };
+            Canvas.SetLeft(earL, 18.0);
+            Canvas.SetTop(earL, 0.0);
+            c.Children.Add(earL);
+            Ellipse earLi = new Ellipse { Width = 3.5, Height = 13.0, Fill = pink, RenderTransformOrigin = new Point(0.5, 1.0), RenderTransform = new RotateTransform(-12.0) };
+            Canvas.SetLeft(earLi, 19.75);
+            Canvas.SetTop(earLi, 4.0);
+            c.Children.Add(earLi);
+            Ellipse earR = new Ellipse { Width = 7.0, Height = 20.0, Fill = fur, RenderTransformOrigin = new Point(0.5, 1.0), RenderTransform = new RotateTransform(8.0) };
+            Canvas.SetLeft(earR, 26.0);
+            Canvas.SetTop(earR, 1.0);
+            c.Children.Add(earR);
+            Ellipse earRi = new Ellipse { Width = 3.5, Height = 13.0, Fill = pink, RenderTransformOrigin = new Point(0.5, 1.0), RenderTransform = new RotateTransform(8.0) };
+            Canvas.SetLeft(earRi, 27.75);
+            Canvas.SetTop(earRi, 5.0);
+            c.Children.Add(earRi);
+            Ellipse tail = new Ellipse { Width = 9.0, Height = 9.0, Fill = new SolidColorBrush(Color.FromRgb(252, 252, 250)) };
+            Canvas.SetLeft(tail, 1.0);
+            Canvas.SetTop(tail, 27.0);
+            c.Children.Add(tail);
+            Ellipse body = new Ellipse { Width = 30.0, Height = 21.0, Fill = fur };
+            Canvas.SetLeft(body, 6.0);
+            Canvas.SetTop(body, 22.0);
+            c.Children.Add(body);
+            Ellipse head = new Ellipse { Width = 19.0, Height = 17.0, Fill = fur };
+            Canvas.SetLeft(head, 22.0);
+            Canvas.SetTop(head, 10.0);
+            c.Children.Add(head);
+            Ellipse eye = new Ellipse { Width = 3.0, Height = 3.0, Fill = new SolidColorBrush(Color.FromRgb(60, 50, 45)) };
+            Canvas.SetLeft(eye, 33.0);
+            Canvas.SetTop(eye, 15.0);
+            c.Children.Add(eye);
+            Ellipse nose = new Ellipse { Width = 4.0, Height = 3.0, Fill = pink };
+            Canvas.SetLeft(nose, 38.0);
+            Canvas.SetTop(nose, 19.0);
+            c.Children.Add(nose);
+            return c;
+        }
+
+        void SetRabbitFacing(double moveDir)
+        {
+            if (_rabbit == null) return;
+            _rabbit.RenderTransformOrigin = new Point(0.5, 1.0);
+            _rabbit.RenderTransform = new ScaleTransform((moveDir < 0.0) ? -1.0 : 1.0, 1.0);
+        }
+
+        void SpawnRabbit(double x)
+        {
+            if (_rabbit != null || _canvas == null) return;
+            double dir = (x < W() * 0.5) ? 1.0 : -1.0;
+            _rabbit = BuildRabbit();
+            _rabbitDir = dir;
+            _rabbitX = (dir > 0.0) ? -60.0 : W() + 50.0;
+            _rabbitTarget = Math.Max(100.0, Math.Min(W() - 100.0, x));
+            _rabbitState = 0;
+            _rabbitStateT = 0.0;
+            _rabbitPhase = 0.0;
+            SetRabbitFacing(dir);
+            System.Windows.Controls.Panel.SetZIndex(_rabbit, 62);
+            Canvas.SetLeft(_rabbit, _rabbitX);
+            Canvas.SetTop(_rabbit, H() - 46.0);
+            _canvas.Children.Add(_rabbit);
+            Log("rabbit came to dig a gift");
+        }
+
+        void RabbitTick(double dt)
+        {
+            if (_rabbit == null || _canvas == null) return;
+            if (_depths == null || _groundY <= 0.0) return;
+            double landY = _groundY - _depths[DriftIndexFor(_rabbitX + 23.0)];
+            if (_rabbitState == 0)
+            {
+                _rabbitPhase += dt * 9.0;
+                double hop = Math.Abs(Math.Sin(_rabbitPhase)) * 13.0;
+                _rabbitX += _rabbitDir * 130.0 * dt;
+                Canvas.SetLeft(_rabbit, _rabbitX);
+                Canvas.SetTop(_rabbit, landY - 46.0 - hop);
+                if (Math.Abs(_rabbitX - _rabbitTarget) < 10.0)
+                {
+                    _rabbitState = 1;
+                    _rabbitStateT = 0.0;
+                }
+            }
+            else if (_rabbitState == 1)
+            {
+                _rabbitStateT += dt;
+                _rabbitX += Math.Sin(_rabbitStateT * 14.0) * 12.0 * dt;
+                Canvas.SetLeft(_rabbit, _rabbitX);
+                Canvas.SetTop(_rabbit, landY - 44.0);
+                if (_driftTick % 8 == 0) SnowSplash(_rabbitX + _rabbitDir * 15.0, landY, 2);
+                if (_rabbitStateT >= 2.2)
+                {
+                    SpawnDrop(_rabbitX + 34.0, landY - 36.0, _rabbitDir * 120.0, -170.0, false);
+                    _rabbitState = 2;
+                    SetRabbitFacing(-_rabbitDir);
+                }
+            }
+            else
+            {
+                _rabbitPhase += dt * 9.0;
+                double hop = Math.Abs(Math.Sin(_rabbitPhase)) * 13.0;
+                _rabbitX += -_rabbitDir * 130.0 * dt;
+                Canvas.SetLeft(_rabbit, _rabbitX);
+                Canvas.SetTop(_rabbit, landY - 46.0 - hop);
+                if ((_rabbitDir > 0.0 && _rabbitX < -70.0) || (_rabbitDir < 0.0 && _rabbitX > W() + 60.0))
+                {
+                    _canvas.Children.Remove(_rabbit);
+                    _rabbit = null;
+                    Log("rabbit done");
+                }
+            }
+        }
+
+        void BuildCountdown()
+        {
+            if (_canvas == null) return;
+            _countdownBoard = new Rectangle
+            {
+                Width = 236,
+                Height = 40,
+                RadiusX = 8,
+                RadiusY = 8,
+                Fill = new SolidColorBrush(Color.FromArgb(150, 30, 45, 65)),
+                Stroke = new SolidColorBrush(Color.FromArgb(102, 255, 255, 255)),
+                StrokeThickness = 1.0
+            };
+            System.Windows.Controls.Panel.SetZIndex(_countdownBoard, 56);
+            Canvas.SetLeft(_countdownBoard, 18.0);
+            _canvas.Children.Add(_countdownBoard);
+            _countdownText = new TextBlock
+            {
+                Text = "",
+                Foreground = new SolidColorBrush(Color.FromRgb(240, 246, 255)),
+                FontFamily = new FontFamily("Segoe UI"),
+                FontSize = 15.5,
+                FontWeight = FontWeights.Bold
+            };
+            System.Windows.Controls.Panel.SetZIndex(_countdownText, 57);
+            Canvas.SetLeft(_countdownText, 34.0);
+            _canvas.Children.Add(_countdownText);
+            _countdownBoard.Visibility = Visibility.Collapsed;
+            _countdownText.Visibility = Visibility.Collapsed;
+            UpdateCountdown();
+        }
+
+        void UpdateCountdown()
+        {
+            if (_countdownBoard == null || _countdownText == null) return;
+            if (_groundY <= 0.0) return;
+            DateTime n = DateTime.Now;
+            if (n.Month == 1 && n.Day == 1)
+            {
+                _countdownBoard.Visibility = Visibility.Collapsed;
+                _countdownText.Visibility = Visibility.Collapsed;
+                return;
+            }
+            DateTime ny = new DateTime(n.Year + 1, 1, 1);
+            TimeSpan sp = ny - n;
+            _countdownText.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                "До Нового года: {0} д {1:00}:{2:00}:{3:00}",
+                (int)sp.TotalDays, sp.Hours, sp.Minutes, sp.Seconds);
+            Canvas.SetTop(_countdownBoard, _groundY - 92.0);
+            Canvas.SetTop(_countdownText, _groundY - 85.0);
+            _countdownBoard.Visibility = Visibility.Visible;
+            _countdownText.Visibility = Visibility.Visible;
+        }
+
+        void ShowNewYearCard()
+        {
+            if (_canvas == null) return;
+            _nyBanner = new TextBlock
+            {
+                Text = "С Новым годом!",
+                FontSize = 54,
+                FontWeight = FontWeights.Bold,
+                Foreground = new SolidColorBrush(Color.FromRgb(225, 240, 255)),
+                TextAlignment = System.Windows.TextAlignment.Center,
+                Width = 460.0,
+                Opacity = 0.0
+            };
+            _nyBanner.RenderTransformOrigin = new Point(0.5, 0.5);
+            _nyBanner.RenderTransform = new RotateTransform(-4.0);
+            _nyBanner.Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 18.0,
+                ShadowDepth = 0.0,
+                Opacity = 0.9
+            };
+            System.Windows.Controls.Panel.SetZIndex(_nyBanner, 83);
+            Canvas.SetLeft(_nyBanner, W() / 2.0 - 230.0);
+            Canvas.SetTop(_nyBanner, H() * 0.32);
+            _canvas.Children.Add(_nyBanner);
+            _nyBannerLife = 9.0;
+            _showLeft = 6;
+            _showTimer = 0.2;
+            Log("new year greeting shown");
+        }
+
         void KnockDownTrain(double cx, double cy)
         {
             if (_train == null || _trainDowned) return;
@@ -797,6 +1447,7 @@ namespace DesktopSnow
         {
             InitDrift();
             BuildMoon();
+            BuildCountdown();
             AddFlakes(_targetCount);
             _clock = Stopwatch.StartNew();
             _timer = new DispatcherTimer(DispatcherPriority.Render);
@@ -993,9 +1644,45 @@ namespace DesktopSnow
             }
             UpdateRockets(dt);
             UpdateStars(dt);
+            UpdateBalls(dt);
+            RabbitTick(dt);
             if (_moonGlow != null) _moonGlow.Opacity = 0.55 + Math.Sin(_t * 0.6) * 0.25;
+            if (_showLeft > 0)
+            {
+                _showTimer -= dt;
+                if (_showTimer <= 0.0)
+                {
+                    SpawnRocket();
+                    _showLeft--;
+                    _showTimer = 0.55;
+                }
+            }
+            if (_nyBanner != null)
+            {
+                _nyBannerLife -= dt;
+                if (_nyBannerLife <= 0.0)
+                {
+                    _canvas.Children.Remove(_nyBanner);
+                    _nyBanner = null;
+                }
+                else
+                {
+                    _nyBanner.Opacity = Math.Max(0.0, Math.Min(1.0,
+                        Math.Min((9.0 - _nyBannerLife) / 0.8, _nyBannerLife / 2.5)));
+                }
+            }
 
             _driftTick++;
+            if (!_nyDone && _driftTick % 60 == 10)
+            {
+                DateTime n1 = DateTime.Now;
+                if (n1.Month == 1 && n1.Day == 1 && n1.Hour < 6)
+                {
+                    _nyDone = true;
+                    ShowNewYearCard();
+                }
+            }
+            if (_driftTick % 60 == 0) UpdateCountdown();
             if (_driftTick % 6 == 0) UpdateDriftShape();
             RefreshRoofs();
             if (_roofHwnd != IntPtr.Zero && _driftTick % 300 == 0) ApplyRoofStyles(_roofHwnd);
@@ -2241,11 +2928,13 @@ namespace DesktopSnow
                     _grinchSink += 7.5 * dt;
                     if (_grinchSink >= h)
                     {
+                        double gx = _grinchX + 32.0;
                         SnowSplash(_grinchX + w / 2.0, landY, 8);
                         _canvas.Children.Remove(_grinch);
                         _grinch = null;
                         _grinchActive = false;
                         Log("grinch buried");
+                        SpawnRabbit(gx);
                         return;
                     }
                 }
@@ -2617,6 +3306,28 @@ namespace DesktopSnow
                 if (d.Held || !d.Stuck) continue;
                 RemoveShape(d.Shape);
                 _drops.RemoveAt(i);
+            }
+            for (int i = _balls.Count - 1; i >= 0; i--)
+            {
+                SnowBall b = _balls[i];
+                if (b.Held || b.Shape == null) continue;
+                SnowSplash(b.X + b.R, b.Y + b.R * 2.0, 4);
+                _canvas.Children.Remove(b.Shape);
+                for (int j = 0; j < _balls.Count; j++)
+                {
+                    if (_balls[j].Under == b) _balls[j].Under = null;
+                }
+                _balls.RemoveAt(i);
+            }
+            for (int i = _snowmen.Count - 1; i >= 0; i--)
+            {
+                Snowman s = _snowmen[i];
+                if (s.Shape != null)
+                {
+                    SnowSplash(s.X, Canvas.GetTop(s.Shape) + s.Shape.Height, 8);
+                    _canvas.Children.Remove(s.Shape);
+                }
+                _snowmen.RemoveAt(i);
             }
         }
 
