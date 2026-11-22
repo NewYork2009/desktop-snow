@@ -771,6 +771,33 @@ namespace DesktopSnow
             return Color.FromRgb(225, 235, 250);
         }
 
+        Color SeasonSplashColor()
+        {
+            if (_season == Season.Autumn)
+            {
+                Color[] pal = new Color[]
+                {
+                    Color.FromRgb(196, 110, 50), Color.FromRgb(216, 158, 86),
+                    Color.FromRgb(150, 96, 48), Color.FromRgb(178, 140, 58)
+                };
+                return pal[_rng.Next(pal.Length)];
+            }
+            if (_season == Season.Spring)
+            {
+                Color[] pal = new Color[]
+                {
+                    Color.FromRgb(255, 205, 228), Color.FromRgb(248, 180, 215),
+                    Color.FromRgb(255, 233, 245)
+                };
+                return pal[_rng.Next(pal.Length)];
+            }
+            if (_season == Season.Summer)
+            {
+                return Color.FromArgb(160, 150, 190, 240);
+            }
+            return Color.FromRgb(250, 252, 255);
+        }
+
         void ApplySeasonColors()
         {
             if (_drift != null)
@@ -2967,7 +2994,7 @@ namespace DesktopSnow
             RefreshRoofs();
             if (_roofHwnd != IntPtr.Zero && _driftTick % 300 == 0) ApplyRoofStyles(_roofHwnd);
 
-            if (_mode == SnowMode.DesktopOnly && _driftTick % 30 == 0 && !_attachedBehindIcons)
+            if (_mode == SnowMode.DesktopOnly && _driftTick % 10 == 0 && !_attachedBehindIcons)
             {
                 SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, 0, 0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -3952,7 +3979,7 @@ namespace DesktopSnow
 
         void ReleaseRoofSnow(Roof roof, bool quiet)
         {
-            if (roof.Depths == null || _roofCanvas == null) return;
+            if (roof.Depths == null || _canvas == null) return;
             if (quiet)
             {
                 for (int i = 0; i < roof.Depths.Length; i++) roof.Depths[i] = 0.0;
@@ -3975,14 +4002,14 @@ namespace DesktopSnow
                     {
                         Width = 3.0 + _rng.NextDouble() * 3.5,
                         Height = 3.0 + _rng.NextDouble() * 3.5,
-                        Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
+                        Fill = new SolidColorBrush(SeasonSplashColor())
                     };
                     c.Shape = puff;
                     System.Windows.Controls.Panel.SetZIndex(puff, 90);
                     Canvas.SetLeft(puff, c.X);
                     Canvas.SetTop(puff, c.Y);
                     _confetti.Add(c);
-                    _roofCanvas.Children.Add(puff);
+                    _canvas.Children.Add(puff);
                     spawned++;
                 }
                 roof.Depths[i] = 0.0;
@@ -3992,6 +4019,7 @@ namespace DesktopSnow
 
         void RoofPuff(double x, double y, int count, Roof roof)
         {
+            if (_canvas == null) return;
             for (int i = 0; i < count; i++)
             {
                 Confetto c = new Confetto();
@@ -4007,14 +4035,14 @@ namespace DesktopSnow
                 {
                     Width = 2.5 + _rng.NextDouble() * 2.5,
                     Height = 2.5 + _rng.NextDouble() * 2.5,
-                    Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
+                    Fill = new SolidColorBrush(SeasonSplashColor())
                 };
                 c.Shape = puff;
                 System.Windows.Controls.Panel.SetZIndex(puff, 80);
                 Canvas.SetLeft(puff, c.X);
                 Canvas.SetTop(puff, c.Y);
                 _confetti.Add(c);
-                _roofCanvas.Children.Add(puff);
+                _canvas.Children.Add(puff);
             }
         }
 
@@ -4221,7 +4249,7 @@ namespace DesktopSnow
                 {
                     Width = 3.0 + _rng.NextDouble() * 3.5,
                     Height = 3.0 + _rng.NextDouble() * 3.5,
-                    Fill = new SolidColorBrush(Color.FromRgb(250, 252, 255))
+                    Fill = new SolidColorBrush(SeasonSplashColor())
                 };
                 puff.Opacity = 0.95;
                 c.Shape = puff;
