@@ -133,6 +133,12 @@ namespace DesktopSnow
         double _t;
         double _wind;
         double _sparkleTimer = 0.4;
+        readonly List<Rocket> _rockets = new List<Rocket>();
+        readonly List<ShootingStar> _stars = new List<ShootingStar>();
+        double _fireworkTimer = 22.0;
+        double _starTimer = 30.0;
+        Canvas _moon;
+        Ellipse _moonGlow;
         int _bulbPhase = 0;
         readonly List<Ellipse> _treeBulbs = new List<Ellipse>();
         readonly List<Color> _treeBulbColors = new List<Color>();
@@ -265,6 +271,26 @@ namespace DesktopSnow
             public double Life;
             public double MaxLife;
             public Ellipse Shape;
+        }
+
+        class Rocket
+        {
+            public double X;
+            public double Y;
+            public double Vy;
+            public double ExplodeY;
+            public Ellipse Shape;
+        }
+
+        class ShootingStar
+        {
+            public double X;
+            public double Y;
+            public double Vx;
+            public double Vy;
+            public double Life;
+            public double MaxLife;
+            public Line Shape;
         }
 
 
@@ -443,6 +469,7 @@ namespace DesktopSnow
             {
                 if (!_trainActive) SpawnTrain();
             }));
+            menu.MenuItems.Add(new SWF.MenuItem("Салют!", delegate { SpawnRocket(); SpawnRocket(); SpawnRocket(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Больше снега", delegate { _targetCount += 80; TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Меньше снега", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
             menu.MenuItems.Add(new SWF.MenuItem("Убрать весь снег", delegate { ClearAllSnow(); }));
@@ -769,6 +796,7 @@ namespace DesktopSnow
         void StartAnimation()
         {
             InitDrift();
+            BuildMoon();
             AddFlakes(_targetCount);
             _clock = Stopwatch.StartNew();
             _timer = new DispatcherTimer(DispatcherPriority.Render);
@@ -950,6 +978,22 @@ namespace DesktopSnow
 
             _bulbPhase++;
             if (_bulbPhase % 33 == 0) ToggleTreeLights();
+
+            _fireworkTimer -= dt;
+            if (_fireworkTimer <= 0.0)
+            {
+                _fireworkTimer = 45.0 + _rng.NextDouble() * 45.0;
+                if (_rng.NextDouble() < 0.7) SpawnRocket();
+            }
+            _starTimer -= dt;
+            if (_starTimer <= 0.0)
+            {
+                _starTimer = 40.0 + _rng.NextDouble() * 55.0;
+                SpawnShootingStar();
+            }
+            UpdateRockets(dt);
+            UpdateStars(dt);
+            if (_moonGlow != null) _moonGlow.Opacity = 0.55 + Math.Sin(_t * 0.6) * 0.25;
 
             _driftTick++;
             if (_driftTick % 6 == 0) UpdateDriftShape();
@@ -2295,6 +2339,221 @@ namespace DesktopSnow
             Canvas.SetTop(e, s.Y);
             _sparkles.Add(s);
             _canvas.Children.Add(e);
+        }
+
+        void BuildMoon()
+        {
+            if (_canvas == null) return;
+            _moon = new Canvas();
+            _moonGlow = new Ellipse { Width = 200, Height = 200 };
+            RadialGradientBrush glow = new RadialGradientBrush();
+            glow.GradientStops.Add(new GradientStop(Color.FromArgb(80, 230, 238, 255), 0.0));
+            glow.GradientStops.Add(new GradientStop(Color.FromArgb(0, 230, 238, 255), 1.0));
+            _moonGlow.Fill = glow;
+            Canvas.SetLeft(_moonGlow, -58);
+            Canvas.SetTop(_moonGlow, -58);
+            _moon.Children.Add(_moonGlow);
+            Ellipse disc = new Ellipse
+            {
+                Width = 84,
+                Height = 84,
+                Fill = new SolidColorBrush(Color.FromRgb(246, 247, 252))
+            };
+            disc.Opacity = 0.92;
+            _moon.Children.Add(disc);
+            Brush crater = new SolidColorBrush(Color.FromRgb(216, 221, 235));
+            double[][] craters = new double[][]
+            {
+                new double[] { 26, 20, 13 },
+                new double[] { 46, 40, 9 },
+                new double[] { 20, 48, 7 },
+                new double[] { 44, 14, 5 }
+            };
+            for (int i = 0; i < craters.Length; i++)
+            {
+                Ellipse e = new Ellipse
+                {
+                    Width = craters[i][2],
+                    Height = craters[i][2],
+                    Fill = crater,
+                    Opacity = 0.7
+                };
+                Canvas.SetLeft(e, craters[i][0]);
+                Canvas.SetTop(e, craters[i][1]);
+                _moon.Children.Add(e);
+            }
+            Canvas.SetLeft(_moon, W() * 0.74);
+            Canvas.SetTop(_moon, H() * 0.13);
+            System.Windows.Controls.Panel.SetZIndex(_moon, -4);
+            _canvas.Children.Add(_moon);
+        }
+
+        void StarTrail(double x, double y, Color col)
+        {
+            if (_canvas == null || _sparkles.Count >= 90) return;
+            Sparkle s = new Sparkle();
+            s.X = x + (_rng.NextDouble() - 0.5) * 7.0;
+            s.Y = y + (_rng.NextDouble() - 0.5) * 7.0;
+            s.MaxLife = 0.5 + _rng.NextDouble() * 0.4;
+            s.Life = s.MaxLife;
+            Ellipse e = new Ellipse
+            {
+                Width = 1.8 + _rng.NextDouble() * 1.5,
+                Height = 1.8 + _rng.NextDouble() * 1.5,
+                Fill = new SolidColorBrush(col)
+            };
+            e.Opacity = 1.0;
+            s.Shape = e;
+            System.Windows.Controls.Panel.SetZIndex(e, 79);
+            Canvas.SetLeft(e, s.X);
+            Canvas.SetTop(e, s.Y);
+            _sparkles.Add(s);
+            _canvas.Children.Add(e);
+        }
+
+        void SpawnShootingStar()
+        {
+            if (_canvas == null) return;
+            bool dirRight = _rng.NextDouble() < 0.5;
+            ShootingStar s = new ShootingStar();
+            s.X = dirRight ? -50.0 : W() + 50.0;
+            s.Y = 30.0 + _rng.NextDouble() * (H() * 0.30);
+            s.Vx = (dirRight ? 1.0 : -1.0) * (500.0 + _rng.NextDouble() * 260.0);
+            s.Vy = 130.0 + _rng.NextDouble() * 110.0;
+            s.MaxLife = 1.4 + _rng.NextDouble() * 0.5;
+            s.Life = s.MaxLife;
+            Line ln = new Line();
+            double len = 46.0 + _rng.NextDouble() * 26.0;
+            double vlen = Math.Sqrt(s.Vx * s.Vx + s.Vy * s.Vy);
+            ln.X1 = 0;
+            ln.Y1 = 0;
+            ln.X2 = -(s.Vx / vlen) * len;
+            ln.Y2 = -(s.Vy / vlen) * len;
+            LinearGradientBrush tail = new LinearGradientBrush();
+            tail.StartPoint = new Point(0.5, 0.5);
+            tail.EndPoint = new Point(0.5, 0.5);
+            tail.StartPoint = new Point(0, 0);
+            tail.EndPoint = new Point(1, 1);
+            tail.GradientStops.Add(new GradientStop(Color.FromArgb(230, 255, 255, 255), 0.0));
+            tail.GradientStops.Add(new GradientStop(Color.FromArgb(0, 190, 210, 255), 1.0));
+            ln.Stroke = tail;
+            ln.StrokeThickness = 2.4;
+            s.Shape = ln;
+            System.Windows.Controls.Panel.SetZIndex(ln, 79);
+            Canvas.SetLeft(ln, s.X);
+            Canvas.SetTop(ln, s.Y);
+            _stars.Add(s);
+            _canvas.Children.Add(ln);
+        }
+
+        void UpdateStars(double dt)
+        {
+            for (int i = _stars.Count - 1; i >= 0; i--)
+            {
+                ShootingStar s = _stars[i];
+                s.Life -= dt;
+                s.X += s.Vx * dt;
+                s.Y += s.Vy * dt;
+                Canvas.SetLeft(s.Shape, s.X);
+                Canvas.SetTop(s.Shape, s.Y);
+                StarTrail(s.X, s.Y, Color.FromRgb(210, 225, 255));
+                if (s.Life <= 0.0 || s.X < -80.0 || s.X > W() + 80.0 || s.Y > H())
+                {
+                    RemoveShape(s.Shape);
+                    _stars.RemoveAt(i);
+                }
+            }
+        }
+
+        void SpawnRocket()
+        {
+            if (_canvas == null) return;
+            Rocket r = new Rocket();
+            r.X = 60.0 + _rng.NextDouble() * Math.Max(80.0, W() - 120.0);
+            r.Y = _groundY - 4.0;
+            r.Vy = -(650.0 + _rng.NextDouble() * 250.0);
+            r.ExplodeY = H() * (0.16 + _rng.NextDouble() * 0.25);
+            r.Shape = new Ellipse
+            {
+                Width = 4.0,
+                Height = 7.0,
+                Fill = new SolidColorBrush(Color.FromRgb(255, 220, 140))
+            };
+            System.Windows.Controls.Panel.SetZIndex(r.Shape, 80);
+            Canvas.SetLeft(r.Shape, r.X);
+            Canvas.SetTop(r.Shape, r.Y);
+            _rockets.Add(r);
+            _canvas.Children.Add(r.Shape);
+        }
+
+        void UpdateRockets(double dt)
+        {
+            for (int i = _rockets.Count - 1; i >= 0; i--)
+            {
+                Rocket r = _rockets[i];
+                r.Vy += 300.0 * dt;
+                r.Y += r.Vy * dt;
+                Canvas.SetLeft(r.Shape, r.X);
+                Canvas.SetTop(r.Shape, r.Y);
+                StarTrail(r.X + (_rng.NextDouble() - 0.5) * 5.0, r.Y + 6.0, Color.FromRgb(255, 215, 120));
+                if (r.Y <= r.ExplodeY || r.Vy > -120.0)
+                {
+                    FireworkBurst(r.X, r.Y);
+                    RemoveShape(r.Shape);
+                    _rockets.RemoveAt(i);
+                }
+            }
+        }
+
+        void FireworkBurst(double cx, double cy)
+        {
+            if (_canvas == null) return;
+            Color baseC = Color.FromRgb(
+                (byte)(150 + _rng.Next(105)),
+                (byte)(150 + _rng.Next(105)),
+                (byte)(150 + _rng.Next(105)));
+            Confetto flash = new Confetto();
+            flash.X = cx - 80.0;
+            flash.Y = cy - 80.0;
+            flash.Vx = 0.0;
+            flash.Vy = 0.0;
+            flash.Life = 0.28;
+            Ellipse fl = new Ellipse { Width = 160, Height = 160 };
+            RadialGradientBrush rg = new RadialGradientBrush();
+            rg.GradientStops.Add(new GradientStop(Color.FromArgb(190, 255, 248, 220), 0.0));
+            rg.GradientStops.Add(new GradientStop(Color.FromArgb(0, 255, 248, 220), 1.0));
+            fl.Fill = rg;
+            flash.Shape = fl;
+            System.Windows.Controls.Panel.SetZIndex(fl, 82);
+            Canvas.SetLeft(fl, flash.X);
+            Canvas.SetTop(fl, flash.Y);
+            _confetti.Add(flash);
+            _canvas.Children.Add(fl);
+            for (int i = 0; i < 54; i++)
+            {
+                double ang = (i / 54.0) * Math.PI * 2.0;
+                double sp = 100.0 + _rng.NextDouble() * 220.0;
+                Confetto c = new Confetto();
+                c.X = cx;
+                c.Y = cy;
+                c.Vx = Math.Cos(ang) * sp;
+                c.Vy = Math.Sin(ang) * sp * 0.9;
+                c.Life = 0.9 + _rng.NextDouble() * 0.8;
+                Color col = (_rng.NextDouble() < 0.25)
+                    ? Color.FromRgb(255, 255, 255)
+                    : baseC;
+                c.Shape = new Ellipse
+                {
+                    Width = 2.4 + _rng.NextDouble() * 1.8,
+                    Height = 2.4 + _rng.NextDouble() * 1.8,
+                    Fill = new SolidColorBrush(col)
+                };
+                System.Windows.Controls.Panel.SetZIndex(c.Shape, 81);
+                Canvas.SetLeft(c.Shape, c.X);
+                Canvas.SetTop(c.Shape, c.Y);
+                _confetti.Add(c);
+                _canvas.Children.Add(c.Shape);
+            }
         }
 
         void UpdateSparkles(double dt)
