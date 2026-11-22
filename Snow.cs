@@ -3981,11 +3981,8 @@ namespace DesktopSnow
                 }
             }
 
-            if (_driftTick % 2 == 0)
-            {
-                RoofMeltAndSmooth();
-                UpdateRoofShapes();
-            }
+            if (_driftTick % 2 == 0) RoofMeltAndSmooth();
+            UpdateRoofShapes();
         }
 
         void ReleaseRoofSnow(Roof roof, bool quiet)
