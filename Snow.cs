@@ -508,7 +508,7 @@ namespace DesktopSnow
             ex |= WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
             SetWindowLong(_hwnd, GWL_EXSTYLE, ex);
             SetWindowPos(_hwnd, IntPtr.Zero, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_NOZORDER);
         }
 
         // ГЛАВНЫЙ РЕЖИМ: снег виден только на рабочем столе, за окнами программ.
@@ -2993,7 +2993,15 @@ namespace DesktopSnow
             if (_driftTick % 60 == 0) UpdateCountdown();
             if (_driftTick % 6 == 0) UpdateDriftShape();
             RefreshRoofs();
-            if (_roofHwnd != IntPtr.Zero && _driftTick % 300 == 0) ApplyRoofStyles(_roofHwnd);
+            if (_roofHwnd != IntPtr.Zero && _driftTick % 30 == 0)
+            {
+                ApplyRoofStyles(_roofHwnd);
+                if (_settingsHwnd != IntPtr.Zero)
+                {
+                    SetWindowPos(_settingsHwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+            }
 
             if (_mode == SnowMode.DesktopOnly && _driftTick % 10 == 0 && !_attachedBehindIcons)
             {
@@ -3794,6 +3802,7 @@ namespace DesktopSnow
                 Canvas.SetLeft(p, x);
                 Canvas.SetTop(p, y);
                 System.Windows.Controls.Panel.SetZIndex(p, 46);
+                p.Clip = ComputeRoofClip(r);
                 _roofCanvas.Children.Add(p);
                 Icicle ic = new Icicle();
                 ic.Roof = r;
