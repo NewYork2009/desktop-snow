@@ -150,7 +150,7 @@ namespace DesktopSnow
         double _rabbitPhase;
         TextBlock _countdownText;
         Rectangle _countdownBoard;
-        Canvas _nyBanner;
+        TextBlock _nyBanner;
         double _nyBannerLife = -1.0;
         bool _nyDone;
         double _showTimer = -1.0;
