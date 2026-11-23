@@ -105,7 +105,7 @@ namespace DesktopSnow
         static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
-        const string AppVersion = "0.9.7";
+        const string AppVersion = "0.9.8";
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         const string SettingsKeyPath = "Software\\DesktopSnow";
 
