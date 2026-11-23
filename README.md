@@ -1,167 +1,195 @@
-# DesktopSnow — снег на рабочем столе Windows
+# DesktopSnow — real snow on your Windows desktop
 
-Настоящий снег поверх рабочего стола: снежинки падают **за иконками**,
-клики мышью проходят сквозь снег, окна и игры не отвлекает.
-При первом запуске приложение само добавляет себя в **автозагрузку** —
-после перезагрузки ПК снег появляется автоматически.
+Real snow on the desktop: snowflakes fall **behind desktop icons**, mouse clicks go straight
+through the snow, and windows and games are not disturbed. On first run the app adds itself
+to **autostart** — after a reboot the snow comes back automatically.
 
-## Как запустить (30 секунд, ничего ставить не надо)
+Everything is one pure C# WPF file with **zero dependencies** — no installer, no runtime download,
+nothing to install. All menus, settings, balloon tips and messages are in English.
 
-1. Скачай папку проекта к себе на ПК.
-2. Дважды кликни **`build.bat`** — соберётся `DesktopSnow.exe` и сразу запустится
-   (компилятор C# уже встроен в Windows, устанавливать нечего).
-3. Всё. Снег идёт, возле часов появился значок снежинки.
+## Quick start (30 seconds, nothing to install)
 
-## Управление (правый клик по значку возле часов)
+1. Download the project folder (green **Code** button → **Download ZIP**), unpack it.
+2. Double-click **`build.bat`** — it compiles `DesktopSnow.exe` and immediately starts it
+   (the C# compiler is built into Windows, there is nothing to install).
+   If it "does nothing", delete old `DesktopSnow.exe` / `Snow.exe` from the folder and run it again.
+3. Done. It's snowing, and a snowflake tray icon appears near the clock.
 
-- **Скринсейвер: снег поверх всех окон** — выключено по умолчанию.
-  Основной режим — «только рабочий стол»: снег виден на рабочем столе
-  и прячется за любыми открытыми окнами и панелью задач.
-- **Больше / меньше снега** — плотность снегопада.
-- **Убрать весь снег** — мгновенно очистить сугробы, шапки на окнах, застрявшие дропы, снежки и снеговиков.
-  То же самое — горячей клавишей **Ctrl+Alt+S** из любого места, даже когда трей недоступен.
-- **Настройки...** — полноценное тёмное окно с фиолетовыми кнопками (см. раздел «Настройки»).
-- **Салют!** — три ракеты взлетают из-за сугроба и рассыпаются звёздами.
-- **Включён вместе с ПК (автозапуск)** — вкл/выкл, ключ
-  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DesktopSnow`.
-- **Выход**.
+Tip: always build from the **newest** unpacked ZIP. The tray tooltip shows the version
+(`DesktopSnow vX.Y.Z - effects on your desktop`) — use it to verify you run a fresh build.
 
-## Зимний вечер
+## Tray controls (right-click the snowflake icon near the clock)
 
-- В правом верхнем углу рабочего стола светит **месяц** с мягким ореолом, который
-  тихонько дышит.
-- Каждые ~40–95 секунд по небу (за окнами, поверх обоев) проносится **падающая звезда** с золотым,
-  искрящимся хвостом из блёсток — успей загадать желание.
-- Примерно раз в 45–90 секунд из-за сугроба взлетает **фейерверк**: золотая ракета с искрящимся
-  следом и взрыв **разноцветных** звёзд (красный, жёлтый, синий, зелёный, оранжевый, розовый,
-  голубой) с яркой вспышкой. Всегда можно устроить салют вручную из меню значка.
+- **Effects over all windows** — screensaver mode: effects are drawn above every window.
+  Default is the opposite: **desktop-only mode**, where snow sits at the bottom of the window
+  stack — visible on the desktop and behind any open windows and the taskbar.
+- **Hide effects behind icons (experimental)** — attaches the effects to the wallpaper layer
+  behind the desktop icons. If Windows refuses the wallpaper trick, the app keeps desktop-only
+  mode and tells you in a balloon tip.
+- **Summon Santa** — call the sleigh immediately, no waiting for the random visit.
+- **Fireworks!** — three rockets launch from the snow and burst into colorful stars.
+- **More effects / Fewer effects** — adjust the effect density (20–620).
+- **Clear all effects** — instantly clears drifts, window caps, stuck drops, snowballs and
+  snowmen. Same via the **Ctrl+Alt+S** hotkey from anywhere, even when the tray is not reachable
+  (e.g. when a snowball is stuck to the cursor).
+- **Settings...** — full dark settings window (see below).
+- **Diagnostics (open log)** — opens `DesktopSnow.log` next to the exe.
+- **Start with Windows (autostart)** — on/off,
+  key `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\DesktopSnow`.
+- **Exit**.
 
-## Настройки
+## Settings window
 
-Правый клик по значку возле часов → **«Настройки...»** — тёмное окно с фиолетовыми кнопками,
-которое можно перетаскивать за шапку (закрывается крестиком или Esc). Внутри:
+Tray icon → **Settings...** — a dark window with purple buttons, draggable by the header
+(closes with the × button or Esc). Sections:
 
-- **Сезон** — 4 кнопки: Снег / Лепестки и бабочки / Дождь / Сухие листья (активный подсвечен ярче).
-Разделы **«Действия»** и **«Персонажи и эффекты»** переключаются вместе с сезоном:
+- **SEASON** — four season buttons: **Snow / Petals & Butterflies / Rain / Dry Leaves**
+  (names describe what you actually see, not calendar names; the active season is highlighted).
+  The **ACTIONS** and **CHARACTERS & EFFECTS** sections switch together with the season, so you
+  always see the settings for the season you selected.
+- **Season: Snow** — actions: Summon Santa, Summon Grinch, Summon Rabbit, Fireworks!,
+  Clear all effects. Toggles: Santa auto (random visits), Grinch, Rabbit,
+  Fireworks & shooting stars (auto), Snowballs, Icicles, Snow on window tops, Sparkles,
+  New Year countdown, Start with Windows (autostart).
+- **Season: Petals & Butterflies** — actions: Fireworks!, Clear all effects.
+  Toggles: Butterfly, Snow on window tops, Sparkles, New Year countdown, Start with Windows.
+- **Season: Rain** — actions: Fireworks!, Clear all effects.
+  Toggles: Bird, Sparkles, New Year countdown, Start with Windows (no window caps in rain).
+- **Season: Dry Leaves** — actions: Fireworks!, Clear all effects.
+  Toggles: Bird, Snow on window tops, Sparkles, New Year countdown, Start with Windows.
+- **EFFECT DENSITY** — slider from 20 to 620 particles.
 
-- **Зима** — Вызвать Санту, Вызвать Гринча, Позвать зайчика, Салют!, Убрать весь снег;
-  тумблеры: Дед Мороз сам (авто), Гринч, Зайчик, Фейерверки и звёзды (авто), Отсчёт до Нового года,
-  Снежки, Шапки на окнах, Сосульки, Блёстки, Вместе с ПК (автозапуск).
-- **Весна** — Салют!, Убрать весь снег; тумблеры: Бабочка, Шапки на окнах, Блёстки, Отсчёт, Вместе с ПК.
-- **Лето** — Салют!, Убрать весь снег; тумблеры: Птица, Блёстки, Отсчёт, Вместе с ПК (шапок летом нет).
-- **Осень** — Салют!, Убрать весь снег; тумблеры: Птица, Шапки на окнах, Блёстки, Отсчёт, Вместе с ПК.
-- **Плотность снега** — слайдер от 20 до 620 снежинок.
+All settings are stored in the registry (`HKCU\Software\DesktopSnow`) and restored on start.
+The settings window is excluded from the roof list — snow never piles up on its buttons.
+Drifts and leaves falling off windows are tinted to match the active season and always happen
+behind windows — nothing flies above your apps.
 
-Всё сохраняется в реестре (`HKCU\Software\DesktopSnow`) и восстанавливается при запуске.
-Окно настроек исключено из «крыш» — снег не скапливается на его кнопках.
-Осыпание сугробов и листьев с окон подкрашено под активный сезон
-(осенью — листья, весной — лепестки) и происходит позади окон, поверх приложений ничего не летает.
+## What pile-up looks like
 
-## Сезоны
+- Snow accumulates as a thin smooth layer at the bottom of the screen (soft cap ~15 px,
+  hard limit 35 px). Below 20 px the bottom of the layer slowly, invisibly melts away, so the
+  drift stays neat instead of growing into a white strip.
+- The layer top is drawn as **smooth rounded arcs**, never triangles.
+- Non-maximized windows get **snow caps on their title bars** (up to 15 px). An empty roof
+  shows no line; caps are rounded and wavy, with **icicles** that shimmer and drip.
+- Moving a window **dumps its snow/leaves** off as real particles — a whole soft sheet, nothing
+  left behind. Caps on lower windows hide behind higher overlapping windows (so a roof on a
+  window below your browser is not visible through it).
+- Maximized windows don't collect snow; while any maximized window is on screen the caps
+  freeze (the desktop is considered hidden). **Fullscreen apps auto-pause** all effects to keep
+  games smooth and the GPU idle.
+- Falls (gifts, trees, leaves) reaching a window land on it — and land **inside** the snow cap
+  of that window, not on top of it.
 
-- **Зима** — всё как раньше: снегопад и сугробы, Дед Мороз с Гринчем, сосульки, месяц,
-  падающие звёзды, снежки и снеговик.
-- **Весна** — вместо снега с неба медленно падают **розовые лепестки**, они скапливаются
-  внизу розоватым слоем и насыпают шапки на окнах. Порхает **бабочка** с машущими крыльями.
-- **Лето** — идёт **дождь**: быстрые капли, лужевидный полупрозрачный слой внизу,
-  брызги при попадании. Крыш на окнах нет, чтобы не заслонять работу. Сверху пролетает
-  **птица** и роняет пару белых перьев.
-- **Осень («Сухие листья»)** — падают **жёлто-рыжие листья**, кувыркаясь в полёте; в кучах внизу и на шапках окон видна **листовая крошка**; внизу копится
-  рыже-коричневый слой листвы. Ветер заметно сильнее, птица пролетает чаще.
+## Winter evening
 
-Зимние персонажи (Дед Мороз, Гринч, зайчик) появляются только зимой; снежки тоже лепятся
-только по зимним сугробам. «Салют!» и обратный отсчёт до Нового года работают круглый год.
+- A **moon** with a softly pulsing glow shines in the top-right corner of the desktop.
+- Every ~40–95 seconds a **shooting star** with a golden sparkling tail streaks across the sky
+  — cartoon-style, bright and shiny. Make a wish.
+- About every 45–90 seconds a **fireworks** rocket rises from the drift and bursts into
+  **multicolored** stars (red, yellow, blue, green, orange, pink, cyan) with a bright flash.
+  Always available manually from the tray menu (a season-independent standing effect).
 
-## Режимы «только рабочий стол»
+## Snow (winter) season
 
-Программа сама выбирает лучшее из двух (обе — режим «только рабочий стол»):
+Snowfall with drifts, Santa & Grinch, icicles, moon, shooting stars, snowballs and a snowman.
 
-1. **Слой обоев (WorkerW)** — идеал: снег ЗА иконками, как живые обои.
-   Остаётся попытаться каждые 20 секунд, если сразу не получилось.
-2. **Низ стека окон** — окно со снегом уходит под все окна программ:
-   снег виден на рабочем столе, скрыт за окнами, панелью задач, клики
-   проходят сквозь него.
+## Santa
 
-## Сугробы
+Every 30 seconds there is a 25% chance that the sleigh flies across the screen on a wavy
+trajectory with a rolling lean — it drops gifts and small trees, which fall spinning at random
+tilts, get stuck in the drift with a snow splash, and slowly sink into the snow.
 
-Снежинки скапливаются внизу ровным слоем до ~15 px, затем лишний снег
-незаметно спрессовывается. Сугроб не наезжает на панель задач.
-На поверхности сугроба мерцают снежные искры.
+- Click a gift — a confetti explosion.
+- Dropped trees carry a twinkling colored garland.
+- Santa waves his hand, the reindeer run through the air with moving legs and bobbing heads,
+  golden sparks trail behind the sleigh.
+- **Grab a tree** (hold LMB on any point of a fallen tree): snow particles fly off it.
+- While holding a tree, swing the mouse to **spin it with inertia**; releasing it makes it fly
+  away while still spinning.
+- **Throw a tree into the flying sleigh** and Santa is knocked down: confetti, flying snow,
+  his gifts scatter in the air and he rolls off-screen. A snowball throw can knock him down too.
+- Sometimes the **Grinch** walks in from the screen edge brandishing gifts: stolen boxes stack
+  into a visible column he carries (no teleporting). Click him — he flinches, falls flat with a
+  snow splash, drops the stolen gift, slides away, and is slowly buried **behind** the drift.
+- The tray menu has **Summon Santa** for an instant visit.
 
+## Snowballs & snowman
 
-## Снег на окнах
+- **Hold LMB on the drift** to mold a snowball. It **grows only while rolled over the drift**
+  (slower than before), and the snow beneath it is **scraped away** with a comb-like clean path.
+  Rolling over open air does nothing, and the taskbar never picks up snowballs.
+- Release gently — the ball settles into the snow; the next ball can be rolled right onto it.
+  Balls can also be stacked on unsupported tops — the upper ball checks what it lands on.
+- Three balls stack into a **snowman**: carrot nose, coal buttons, stick arms and a red bucket
+  on the head. Two snowmen can live on the desktop at the same time.
+- Release the ball sharply — it flies like a projectile. A hit **kills the Grinch**
+  (same cinematic death) and can **knock Santa off the sleigh**. A big ball slamming into the
+  drift adds snow and splashes some around.
 
-Немного снега оседает на **верхних краях окон** (проводник и другие обычные
-программы): там копится такая же шапка с мягким капом ~15 px. Поверх окон
-в полёте падают подарки и ёлки — они застревают на окне и тоже закапываются.
-Передвинешь окно — весь снег с его края тут же **сыпется вниз вместе
-с подарками**, а с набегших шапок свисают льдинки-сосульки — мерцают и изредка накапливают капелью.</br>Развёрнутые на весь экран окна снега не копят, а пока на экране есть развёрнутое на весь экран приложение — шапки не растут и на остальных окнах: считается, что рабочего стола не видно.
+## Rabbit
 
-## Дед Мороз
+Once the Grinch is fully buried, a **rabbit** hops in from the screen edge, excitedly digs
+through the snow (with snow spray) and **digs out the stolen gift** — it bounces up and drops
+back into the drift. Then the rabbit hops away.
 
-Раз в 30 секунд с шансом 25% через экран пролетает упряжка — она роняет подарки
-и ёлки, которые падают вращаясь и застревают в сугробе под случайным углом,
-застрявшие дропы пробуждают снежные брызги, а сами постепенно тонут в снегу.
+## New Year countdown
 
-- Клик по подарку — взрыв конфетти.
-- **На упавших ёлках мигает гирлянда** — разноцветные огоньки.
-- Ёлку можно **выдернуть из сугроба мышкой** (зажми в любой точке и потяни):
-  при выдёргивании и тряске с неё сыплется снег.
-- Зажатую ёлку можно **раскрутить по инерции** — махни мышкой в сторону.
-  Отпустишь — она летит и продолжает вращаться.
-- Если ёлку **бросить** в пролетевшую упряжку — Дед Мороз будет сбит: конфетти,
-  снег, а подарки рассыплются по столу.
-- Иногда вместе с упряжкой из-за края экрана **выходит Гринч** и таскает
-  подарки из сугроба — нарытые коробки накладываются в нему видимым столбиком, и он уносит их с собой. Клик по нему — он вздрагивает, падает
-  навзничь со снежным всплеском, роняет украденный подарок, а потом его медленно
-  заносит снегом.
-- Дед машет рукой, олени семенят ногами и помахивают головами, из-под саней
-  летят золотые искры.
-- В трее есть пункт «Вызвать Санту» для мгновенного призыва.
+- A **countdown plate "New Year in: Nd HH:MM:SS"** (330 px wide) sits in the bottom-right corner
+  above the drift, updated every second from the system clock. Winter season only.
+- On the night of January 1st (if the app is running at midnight **or** started before 06:00
+  on January 1st) — a big fireworks show and a **"Happy New Year!"** banner in the center of
+  the screen. The plate hides itself on January 1st.
 
-## Снежки и снеговик
+## Petals & Butterflies (spring)
 
-- **Зажми ЛКМ на сугробе** — слепишь снежок. Води им по сугробу — ком **растёт катанием**
-  (до большого размера), а снег под ним **сгребается**. В воздухе ком не растёт.
-  Клик в трей — не мешает, панель задач не лепит снег. Отпусти аккуратно — ком уляжется в снег,
-  следующий ком можно поставить прямо на него.
-- Три кома друг на друге складываются в **снеговика**: с морковкой, пуговицами,
-  палками-руками и красным ведром на голове. Одновременно на столе живут два снеговика.
-- Отпусти ком **резко** — снежок улетает как снаряд. Попадание сбивает **Гринча**
-  (та же кинематографичная смерть) и может **сбить Деда Мороза** с упряжки.
-  Большой ком, влетев в сугроб, добавляет снега и даёт брызги.
+Pink **petals** fall slowly instead of snow, pile into a pink layer and lay soft caps on window
+tops. A **butterfly** with flapping wings flutters above the desktop. The drift/leaf shedding
+off windows is tinted pink.
 
-## Зайчик
+## Rain (summer)
 
-Когда Гринча окончательно заносят снегом, из-за края экрана **прибегает зайчик**: скачет
-к месту захоронения, увлечённо роет носом снег (с брызгами) и **откапывает украденный
-подарок** — тот подпрыгивает и падает обратно в сугроб. После этого зайчик ускачет
-обратно за экран.
+**Rain**: fast translucent drops, a glassy wet layer along the bottom, splash bursts on impact.
+No window caps (nothing should hide your work), and the drops always land behind windows.
 
-## Обратный отсчёт и Новый год
+## Dry Leaves (autumn)
 
-- В левом нижнем углу над сугробом висит **табличка «До Нового года: N д ЧЧ:ММ:СС»**
-  — время берётся с системных часов, обновляется каждую секунду.
-- В ночь на 1 января (если приложение запущено в момент полуночи **или** запущено до
-  06:00 первого января) — большой салют из шести ракет и надпись **«С Новым годом!»**
-  в центре экрана. Первого числа табличка с отсчётом прячется.
+Autumn leaves fall in a 5-tint warm palette, get caps and pile at the bottom into a **dense
+carpet of whole landed leaves** (the same shapes/tints as the falling leaves — no mush or
+"leaves puree"). A wind gust occasionally lifts a few old leaves back into the air, and the
+**bird** visits. Old landed leaves **expire automatically** (each has a lifetime of 90–150 s),
+and the carpet is capped at ~1200 leaves so performance stays flat. Leaves falling off windows
+shed as whole leaves in the same palette.
 
-## Если снега не видно
+## Performance
 
-Режим «за иконками» опирается на трюк с окнами Progman/WorkerW и на некоторых
-сборках Windows может не сработать. Тогда приложение само включает запасной
-режим «поверх всех окон», либо переключи его вручную в меню значка.
+- Everything is dt-based physics at ~60 fps, with per-window clipping, cached and frozen
+  geometry/brushes, and caps rebuilt only when the snow depth actually changes.
+- Maximized/fullscreen apps trigger an **auto-pause**: only a light background refresh runs,
+  the GPU stays free for games.
+- Particle counts are capped (flakes, decos, sparkles), and there are no per-tick allocations
+  in the hot paths. If you still see high GPU use, lower **EFFECT DENSITY** in settings.
 
-## Если ничего не происходит
+## If the snow is not visible
 
-1. Проверь, нет ли рядом с `DesktopSnow.exe` файла **`DesktopSnow.log`** —
-   открой его блокнотом: там видно, на каком шаге приложение споткнулось.
-   Если при запуске выскочило окно с ошибкой — это тоже текст ошибки из кода.
-2. Если окна нет и лога нет — значит, сам exe не запустился; напиши, что
-   показал `build.bat`.
-3. Появление и мгновенное закрытие окна с ошибкой = кидай её текст/screenshot.
+The "behind icons" mode relies on the Progman/WorkerW wallpaper trick and can fail on some
+Windows builds. In that case the app itself falls back to desktop-only mode, or switch modes
+manually in the tray menu.
 
-## Файлы
+## If nothing happens
 
-- `Snow.cs` — весь код приложения (WPF, один файл, без зависимостей).
-- `build.bat` — сборка и запуск.
+1. Look for **`DesktopSnow.log`** next to `DesktopSnow.exe`, open it in Notepad: it shows the
+   step where the app stumbled. A start line `program start, version ...` means the build
+   actually launched.
+2. If a second instance is started, a message appears:
+   "DesktopSnow is already running (check the tray icon near the clock)." — close the old one
+   via tray → Exit first.
+3. If there is no window and no log, the exe itself failed to start — check what `build.bat`
+   printed, and if an error window flashes, send its text/screenshot.
+
+## Files
+
+- `Snow.cs` — all app code (WPF, single file, no dependencies). All user-facing strings are
+  English; code comments and internal log lines stay minimal and ASCII.
+- `build.bat` — builds and runs. Kills old `DesktopSnow.exe` / `Snow.exe` first, detects a
+  preview-only ZIP, and uses the C# compiler already built into Windows.

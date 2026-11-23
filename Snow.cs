@@ -105,7 +105,7 @@ namespace DesktopSnow
         static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
-        const string AppVersion = "0.9.9";
+        const string AppVersion = "1.0.0";
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         const string SettingsKeyPath = "Software\\DesktopSnow";
 
@@ -535,7 +535,7 @@ namespace DesktopSnow
                 StartAnimation();
                 Log("started, mode: " + _mode + ", behindIcons: " + _attachedBehindIcons);
                 _tray.ShowBalloonTip(4000, "DesktopSnow",
-                    "Снег запущен (только рабочий стол). Управление: значок возле часов.",
+                    "DesktopSnow is running (desktop only). Right-click the tray icon to control it.",
                     SWF.ToolTipIcon.Info);
             }
             catch (Exception ex)
@@ -650,37 +650,37 @@ namespace DesktopSnow
 
         void SetupTray()
         {
-            _miAutostart = new SWF.MenuItem("Включён вместе с ПК (автозапуск)", OnClickAutostart);
-            _miScreensaver = new SWF.MenuItem("Эффекты поверх всех окон", OnClickScreensaver);
-            _miIcons = new SWF.MenuItem("Эффекты за иконками (эксперимент)", OnClickBehindIcons);
+            _miAutostart = new SWF.MenuItem("Start with Windows (autostart)", OnClickAutostart);
+            _miScreensaver = new SWF.MenuItem("Effects over all windows", OnClickScreensaver);
+            _miIcons = new SWF.MenuItem("Hide effects behind icons (experimental)", OnClickBehindIcons);
 
             SWF.ContextMenu menu = new SWF.ContextMenu();
             menu.MenuItems.Add(_miScreensaver);
             menu.MenuItems.Add(_miIcons);
-            menu.MenuItems.Add(new SWF.MenuItem("Вызвать Санту", delegate
+            menu.MenuItems.Add(new SWF.MenuItem("Summon Santa", delegate
             {
                 if (!_trainActive) SpawnTrain();
             }));
-            menu.MenuItems.Add(new SWF.MenuItem("Салют!", delegate { SpawnRocket(); SpawnRocket(); SpawnRocket(); }));
-            menu.MenuItems.Add(new SWF.MenuItem("Больше эффектов", delegate { _targetCount += 80; TrimFlakes(); }));
-            menu.MenuItems.Add(new SWF.MenuItem("Меньше эффектов", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
-            menu.MenuItems.Add(new SWF.MenuItem("Убрать все эффекты", delegate { ClearAllSnow(); }));
-            menu.MenuItems.Add(new SWF.MenuItem("\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438...", delegate
+            menu.MenuItems.Add(new SWF.MenuItem("Fireworks!", delegate { SpawnRocket(); SpawnRocket(); SpawnRocket(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("More effects", delegate { _targetCount += 80; TrimFlakes(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("Fewer effects", delegate { _targetCount = Math.Max(20, _targetCount - 80); TrimFlakes(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("Clear all effects", delegate { ClearAllSnow(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("Settings...", delegate
             {
                 Dispatcher.BeginInvoke((Action)delegate { ShowSettingsWindow(); });
             }));
             menu.MenuItems.Add(new SWF.MenuItem("-"));
-            menu.MenuItems.Add(new SWF.MenuItem("Диагностика (открыть лог)", delegate
+            menu.MenuItems.Add(new SWF.MenuItem("Diagnostics (open log)", delegate
             {
                 try { System.Diagnostics.Process.Start("notepad.exe", _logPath); }
                 catch (Exception) { }
             }));
             menu.MenuItems.Add(_miAutostart);
-            menu.MenuItems.Add(new SWF.MenuItem("Выход", delegate { Quit(); }));
+            menu.MenuItems.Add(new SWF.MenuItem("Exit", delegate { Quit(); }));
 
             _tray = new SWF.NotifyIcon();
             _tray.Icon = MakeIcon();
-            _tray.Text = "DesktopSnow v" + AppVersion + " — эффекты на рабочем столе";
+            _tray.Text = "DesktopSnow v" + AppVersion + " - effects on your desktop";
             _tray.ContextMenu = menu;
             _tray.Visible = true;
             SyncTrayCheckState();
@@ -747,18 +747,18 @@ namespace DesktopSnow
             {
                 PlaceAtWindowStackBottom();
                 _tray.ShowBalloonTip(4000, "DesktopSnow",
-                    "Снег возвращён в режим «только рабочий стол».", SWF.ToolTipIcon.Info);
+                    "Snow is back in desktop-only mode.", SWF.ToolTipIcon.Info);
             }
             else if (TryAttachBehindIcons())
             {
                 _tray.ShowBalloonTip(4000, "DesktopSnow",
-                    "Получилось: снег теперь за иконками рабочего стола.", SWF.ToolTipIcon.Info);
+                    "Done: snow is now behind the desktop icons.", SWF.ToolTipIcon.Info);
             }
             else
             {
                 PlaceAtWindowStackBottom();
                 _tray.ShowBalloonTip(5000, "DesktopSnow",
-                    "Windows не дал спрятать снег за иконки. Оставлен режим «только рабочий стол».",
+                    "Windows did not allow hiding snow behind icons. Desktop-only mode kept.",
                     SWF.ToolTipIcon.Warning);
             }
             SyncTrayCheckState();
@@ -1520,7 +1520,7 @@ namespace DesktopSnow
                 hdrBox.Children.Add(flake);
 
                 TextBlock hdr = new TextBlock();
-                hdr.Text = "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 DesktopSnow";
+                hdr.Text = "DesktopSnow Settings";
                 hdr.FontSize = 15;
                 hdr.FontWeight = FontWeights.Bold;
                 hdr.Foreground = new SolidColorBrush(Color.FromRgb(214, 190, 255));
@@ -1559,7 +1559,7 @@ namespace DesktopSnow
                 StackPanel secSeason = new StackPanel();
                 Grid.SetRow(secSeason, 1);
                 root.Children.Add(secSeason);
-                secSeason.Children.Add(MakeSectionLabel("\u0421\u0415\u0417\u041e\u041d"));
+                secSeason.Children.Add(MakeSectionLabel("SEASON"));
 
                 System.Windows.Controls.Primitives.UniformGrid ugS = new System.Windows.Controls.Primitives.UniformGrid();
                 ugS.Rows = 2;
@@ -1567,8 +1567,8 @@ namespace DesktopSnow
                 secSeason.Children.Add(ugS);
 
                 Season[] seasons = new Season[] { Season.Winter, Season.Spring, Season.Summer, Season.Autumn };
-                string[] names = new string[] { "\u0421\u043d\u0435\u0433", "\u041b\u0435\u043f\u0435\u0441\u0442\u043a\u0438 \u0438 \u0431\u0430\u0431\u043e\u0447\u043a\u0438", "\u0414\u043e\u0436\u0434\u044c", "\u0421\u0443\u0445\u0438\u0435 \u043b\u0438\u0441\u0442\u044c\u044f" };
-                string[] descs = new string[] { "\u0421\u043d\u0435\u0433, \u0414\u0435\u0434 \u041c\u043e\u0440\u043e\u0437 \u0438 \u0413\u0440\u0438\u043d\u0447", "\u041b\u0435\u043f\u0435\u0441\u0442\u043a\u0438 \u0438 \u0431\u0430\u0431\u043e\u0447\u043a\u0430", "\u0414\u043e\u0436\u0434\u044c \u0438 \u043f\u0442\u0438\u0446\u0430", "\u041b\u0438\u0441\u0442\u044c\u044f \u0438 \u0432\u0435\u0442\u0435\u0440" };
+                string[] names = new string[] { "Snow", "Petals & Butterflies", "Rain", "Dry Leaves" };
+                string[] descs = new string[] { "Snow, Santa & Grinch", "Petals & Butterfly", "Rain & Bird", "Leaves & Wind" };
                 List<Border> seasonBtns = new List<Border>();
                 for (int i = 0; i < seasons.Length; i++)
                 {
@@ -1632,7 +1632,7 @@ namespace DesktopSnow
                 StackPanel secAct = new StackPanel();
                 Grid.SetRow(secAct, 2);
                 root.Children.Add(secAct);
-                secAct.Children.Add(MakeSectionLabel("\u0414\u0415\u0419\u0421\u0422\u0412\u0418\u042f"));
+                secAct.Children.Add(MakeSectionLabel("ACTIONS"));
 
                 System.Windows.Controls.Primitives.UniformGrid ugA = new System.Windows.Controls.Primitives.UniformGrid();
                 ugA.Columns = 3;
@@ -1641,7 +1641,7 @@ namespace DesktopSnow
                 StackPanel secTog = new StackPanel();
                 Grid.SetRow(secTog, 3);
                 root.Children.Add(secTog);
-                secTog.Children.Add(MakeSectionLabel("\u041f\u0415\u0420\u0421\u041e\u041d\u0410\u0416\u0418 \u0418 \u042d\u0424\u0424\u0415\u041a\u0422\u042b"));
+                secTog.Children.Add(MakeSectionLabel("CHARACTERS & EFFECTS"));
 
                 System.Windows.Controls.Primitives.UniformGrid ugT = new System.Windows.Controls.Primitives.UniformGrid();
                 ugT.Columns = 2;
@@ -1654,10 +1654,10 @@ namespace DesktopSnow
                 StackPanel secDen = new StackPanel();
                 Grid.SetRow(secDen, 4);
                 root.Children.Add(secDen);
-                secDen.Children.Add(MakeSectionLabel("\u041f\u041b\u041e\u0422\u041d\u041e\u0421\u0422\u042c \u042d\u0424\u0424\u0415\u041a\u0422\u041e\u0412"));
+                secDen.Children.Add(MakeSectionLabel("EFFECT DENSITY"));
 
                 TextBlock denLabel = new TextBlock();
-                denLabel.Text = "\u041f\u043b\u043e\u0442\u043d\u043e\u0441\u0442\u044c: " + _targetCount;
+                denLabel.Text = "Density: " + _targetCount;
                 denLabel.FontSize = 12;
                 denLabel.Foreground = Brushes.White;
                 denLabel.Margin = new Thickness(6, 0, 0, 4);
@@ -1671,7 +1671,7 @@ namespace DesktopSnow
                 sl.ValueChanged += delegate(object ss, System.Windows.RoutedPropertyChangedEventArgs<double> ee)
                 {
                     _targetCount = (int)ee.NewValue;
-                    denLabel.Text = "\u041f\u043b\u043e\u0442\u043d\u043e\u0441\u0442\u044c: " + _targetCount;
+                    denLabel.Text = "Density: " + _targetCount;
                     TrimFlakes();
                 };
                 secDen.Children.Add(sl);
@@ -1700,57 +1700,57 @@ namespace DesktopSnow
             ugT.Children.Clear();
             if (_season == Season.Winter)
             {
-                ugA.Children.Add(MakeActionButton("\u0412\u044b\u0437\u0432\u0430\u0442\u044c \u0421\u0430\u043d\u0442\u0443", delegate
+                ugA.Children.Add(MakeActionButton("Summon Santa", delegate
                 {
                     if (!_trainActive) SpawnTrain();
                 }));
-                ugA.Children.Add(MakeActionButton("\u0412\u044b\u0437\u0432\u0430\u0442\u044c \u0413\u0440\u0438\u043d\u0447\u0430", delegate
+                ugA.Children.Add(MakeActionButton("Summon Grinch", delegate
                 {
                     if (!_grinchActive) SpawnGrinch();
                 }));
-                ugA.Children.Add(MakeActionButton("\u041f\u043e\u0437\u0432\u0430\u0442\u044c \u0437\u0430\u0439\u0447\u0438\u043a\u0430", delegate
+                ugA.Children.Add(MakeActionButton("Summon Rabbit", delegate
                 {
                     if (_rabbit == null) SpawnRabbit(_rng.NextDouble() * (W() - 100.0) + 50.0);
                 }));
             }
-            ugA.Children.Add(MakeActionButton("\u0421\u0430\u043b\u044e\u0442!", delegate
+            ugA.Children.Add(MakeActionButton("Fireworks!", delegate
             {
                 SpawnRocket();
                 SpawnRocket();
                 SpawnRocket();
             }));
-            ugA.Children.Add(MakeActionButton("\u0423\u0431\u0440\u0430\u0442\u044c \u0432\u0441\u0435 \u044d\u0444\u0444\u0435\u043a\u0442\u044b", delegate
+            ugA.Children.Add(MakeActionButton("Clear all effects", delegate
             {
                 ClearAllSnow();
             }));
             if (_season == Season.Winter)
             {
-                ugT.Children.Add(MakeToggle("\u0414\u0435\u0434 \u041c\u043e\u0440\u043e\u0437 \u0441\u0430\u043c (\u0430\u0432\u0442\u043e)", _santaAutoEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Santa auto (random visits)", _santaAutoEnabled, delegate(bool on)
                 {
                     _santaAutoEnabled = on;
                     SaveSettings();
                 }));
-                ugT.Children.Add(MakeToggle("\u0413\u0440\u0438\u043d\u0447", _grinchEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Grinch", _grinchEnabled, delegate(bool on)
                 {
                     _grinchEnabled = on;
                     SaveSettings();
                 }));
-                ugT.Children.Add(MakeToggle("\u0417\u0430\u0439\u0447\u0438\u043a", _rabbitEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Rabbit", _rabbitEnabled, delegate(bool on)
                 {
                     _rabbitEnabled = on;
                     SaveSettings();
                 }));
-                ugT.Children.Add(MakeToggle("\u0424\u0435\u0439\u0435\u0440\u0432\u0435\u0440\u043a\u0438 \u0438 \u0437\u0432\u0451\u0437\u0434\u044b (\u0430\u0432\u0442\u043e)", _fireworksAuto, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Fireworks & shooting stars (auto)", _fireworksAuto, delegate(bool on)
                 {
                     _fireworksAuto = on;
                     SaveSettings();
                 }));
-                ugT.Children.Add(MakeToggle("\u0421\u043d\u0435\u0436\u043a\u0438", _snowballsEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Snowballs", _snowballsEnabled, delegate(bool on)
                 {
                     _snowballsEnabled = on;
                     SaveSettings();
                 }));
-                ugT.Children.Add(MakeToggle("\u0421\u043e\u0441\u0443\u043b\u044c\u043a\u0438", _iciclesEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Icicles", _iciclesEnabled, delegate(bool on)
                 {
                     _iciclesEnabled = on;
                     SaveSettings();
@@ -1758,7 +1758,7 @@ namespace DesktopSnow
             }
             if (_season == Season.Spring)
             {
-                ugT.Children.Add(MakeToggle("\u0411\u0430\u0431\u043e\u0447\u043a\u0430", _butterflyEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Butterfly", _butterflyEnabled, delegate(bool on)
                 {
                     _butterflyEnabled = on;
                     SaveSettings();
@@ -1766,7 +1766,7 @@ namespace DesktopSnow
             }
             if (_season == Season.Summer || _season == Season.Autumn)
             {
-                ugT.Children.Add(MakeToggle("\u041f\u0442\u0438\u0446\u0430", _birdEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Bird", _birdEnabled, delegate(bool on)
                 {
                     _birdEnabled = on;
                     SaveSettings();
@@ -1774,24 +1774,24 @@ namespace DesktopSnow
             }
             if (_season != Season.Summer)
             {
-                ugT.Children.Add(MakeToggle("\u0428\u0430\u043f\u043a\u0438 \u043d\u0430 \u043e\u043a\u043d\u0430\u0445", _roofCapsEnabled, delegate(bool on)
+                ugT.Children.Add(MakeToggle("Snow on window tops", _roofCapsEnabled, delegate(bool on)
                 {
                     _roofCapsEnabled = on;
                     SaveSettings();
                 }));
             }
-            ugT.Children.Add(MakeToggle("\u0411\u043b\u0451\u0441\u0442\u043a\u0438", _sparklesEnabled, delegate(bool on)
+            ugT.Children.Add(MakeToggle("Sparkles", _sparklesEnabled, delegate(bool on)
             {
                 _sparklesEnabled = on;
                 SaveSettings();
             }));
-            ugT.Children.Add(MakeToggle("\u041e\u0442\u0441\u0447\u0451\u0442 \u0434\u043e \u041d\u043e\u0432\u043e\u0433\u043e \u0433\u043e\u0434\u0430", _countdownEnabled, delegate(bool on)
+            ugT.Children.Add(MakeToggle("New Year countdown", _countdownEnabled, delegate(bool on)
             {
                 _countdownEnabled = on;
                 if (!on) UpdateCountdown();
                 SaveSettings();
             }));
-            ugT.Children.Add(MakeToggle("\u0412\u043c\u0435\u0441\u0442\u0435 \u0441 \u041f\u041a (\u0430\u0432\u0442\u043e\u0437\u0430\u043f\u0443\u0441\u043a)", IsAutostartEnabled(), delegate(bool on)
+            ugT.Children.Add(MakeToggle("Start with Windows (autostart)", IsAutostartEnabled(), delegate(bool on)
             {
                 if (on) AddAutostart();
                 else RemoveAutostart();
@@ -2717,7 +2717,7 @@ namespace DesktopSnow
             DateTime ny = new DateTime(n.Year + 1, 1, 1);
             TimeSpan sp = ny - n;
             _countdownText.Text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                "До Нового года: {0} д {1:00}:{2:00}:{3:00}",
+                "New Year in: {0}d {1:00}:{2:00}:{3:00}",
                 (int)sp.TotalDays, sp.Hours, sp.Minutes, sp.Seconds);
             double bx = W() - 18.0 - 330.0;
             Canvas.SetLeft(_countdownBoard, bx);
@@ -2733,7 +2733,7 @@ namespace DesktopSnow
             if (_canvas == null) return;
             _nyBanner = new TextBlock
             {
-                Text = "С Новым годом!",
+                Text = "Happy New Year!",
                 FontSize = 54,
                 FontWeight = FontWeights.Bold,
                 Foreground = new SolidColorBrush(Color.FromRgb(225, 240, 255)),
@@ -5340,7 +5340,7 @@ namespace DesktopSnow
             {
                 Log("second instance blocked");
                 SWF.MessageBox.Show(
-                    "DesktopSnow \u0443\u0436\u0435 \u0437\u0430\u043f\u0443\u0449\u0435\u043d (\u0437\u043d\u0430\u0447\u043e\u043a \u0440\u044f\u0434\u043e\u043c \u0441 \u0447\u0430\u0441\u0430\u043c\u0438). \u0417\u0430\u043a\u0440\u043e\u0439 \u0441\u0442\u0430\u0440\u044b\u0439 \u0447\u0435\u0440\u0435\u0437 \u0442\u0440\u0435\u0439 \u2192 \u0412\u044b\u0445\u043e\u0434, \u0435\u0441\u043b\u0438 \u043d\u0443\u0436\u043d\u043e \u043f\u0435\u0440\u0435\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c.",
+                    "DesktopSnow is already running (check the tray icon near the clock). Close the old one via tray -> Exit if you want to restart.",
                     "DesktopSnow", SWF.MessageBoxButtons.OK, SWF.MessageBoxIcon.Information);
                 return;
             }
