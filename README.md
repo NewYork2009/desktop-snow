@@ -143,9 +143,10 @@ back into the drift. Then the rabbit hops away.
 
 ## Petals & Butterflies (spring)
 
-Pink **petals** fall slowly instead of snow, pile into a pink layer and lay soft caps on window
-tops. A **butterfly** with flapping wings flutters above the desktop. The drift/leaf shedding
-off windows is tinted pink.
+Pink **sakura petals** fall slowly instead of snow and pile into a **dense carpet of whole
+landed petals** along the bottom and on window tops — the same landed-deco system the autumn
+leaves use (same clipping behind windows, ~1200 cap, auto-expire). A **butterfly** with
+flapping wings flutters above the desktop. Drift/leaf shedding off windows is tinted pink.
 
 ## Rain (summer)
 

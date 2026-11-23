@@ -105,7 +105,7 @@ namespace DesktopSnow
         static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
-        const string AppVersion = "1.0.0";
+        const string AppVersion = "1.0.1";
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         const string SettingsKeyPath = "Software\\DesktopSnow";
 
@@ -1331,15 +1331,22 @@ namespace DesktopSnow
 
             Color[] tints = new Color[]
             {
-                Color.FromRgb(255, 183, 213),
-                Color.FromRgb(255, 214, 232),
-                Color.FromRgb(250, 240, 245),
-                Color.FromRgb(255, 168, 200)
+                Color.FromRgb(255, 168, 190),
+                Color.FromRgb(255, 138, 168),
+                Color.FromRgb(255, 205, 220),
+                Color.FromRgb(247, 112, 148),
+                Color.FromRgb(255, 183, 205)
             };
             f.Tint = tints[_rng.Next(tints.Length)];
+            Color light = Color.FromRgb(
+                (byte)Math.Min(255, f.Tint.R + 45),
+                (byte)Math.Min(255, f.Tint.G + 45),
+                (byte)Math.Min(255, f.Tint.B + 45));
 
-            Ellipse shape = new Ellipse { Width = 9.0, Height = 5.5 };
-            shape.Fill = new LinearGradientBrush(Color.FromRgb(255, 236, 244), f.Tint, 90.0);
+            Ellipse shape = new Ellipse { Width = 10.5, Height = 6.5 };
+            shape.Fill = Frozen(new LinearGradientBrush(light, f.Tint, 45.0));
+            shape.Stroke = Frozen(new SolidColorBrush(Color.FromArgb(140, 190, 85, 120)));
+            shape.StrokeThickness = 0.6;
             shape.Opacity = f.Opacity;
             RotateTransform rt = new RotateTransform(_rng.NextDouble() * 360.0);
             shape.RenderTransform = rt;
@@ -2984,7 +2991,7 @@ namespace DesktopSnow
             if (_decoTimer <= 0.0)
             {
                 _decoTimer = 0.08 + _rng.NextDouble() * 0.12;
-                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 1200)
+                if ((_season == Season.Autumn || _season == Season.Spring) && _sparklesEnabled && _decos.Count < 1200)
                 {
                     for (int dk = 0; dk < 8; dk++)
                     {
@@ -3101,7 +3108,7 @@ namespace DesktopSnow
                         {
                             if (IsRoofOccluded(r, f.X)) continue;
                             DepositRoof(r, f.X, f.R * 5.0);
-                            if (_season == Season.Autumn && _decos.Count < 1200)
+                            if ((_season == Season.Autumn || _season == Season.Spring) && _decos.Count < 1200)
                             {
                                 int li = (int)((f.X - r.L) / _driftSegment);
                                 if (li < 0) li = 0;
@@ -3127,7 +3134,7 @@ namespace DesktopSnow
                     else
                     {
                         DepositSnow(f.X, f.R * 5.0);
-                        if (_season == Season.Autumn && _decos.Count < 1200)
+                        if ((_season == Season.Autumn || _season == Season.Spring) && _decos.Count < 1200)
                         {
                             SpawnLeafDecoAt(f.X, _groundY - _depths[DriftIndexFor(f.X)] - 1.0 + _rng.NextDouble() * 2.5, false, null, f.Tint, _groundY - _depths[DriftIndexFor(f.X)]);
                         }
@@ -4164,7 +4171,7 @@ namespace DesktopSnow
                     Confetto c = new Confetto();
                     c.X = roof.L + i * _driftSegment + _rng.NextDouble() * _driftSegment;
                     c.Y = roof.T - _rng.NextDouble() * Math.Max(1.0, roof.Depths[i]);
-                    if (_season == Season.Autumn)
+                    if (_season == Season.Autumn || _season == Season.Spring)
                     {
                         c.Vx = -60.0 + _rng.NextDouble() * 120.0;
                         c.Vy = -20.0 - _rng.NextDouble() * 60.0;
@@ -4177,9 +4184,12 @@ namespace DesktopSnow
                             (byte)Math.Min(255, c.Tint.R + 45),
                             (byte)Math.Min(255, c.Tint.G + 45),
                             (byte)Math.Min(255, c.Tint.B + 45));
-                        Ellipse leafy = new Ellipse { Width = 12.5, Height = 7.2 };
+                        bool petalDump = _season == Season.Spring;
+                        Ellipse leafy = new Ellipse { Width = petalDump ? 10.0 : 12.5, Height = petalDump ? 6.2 : 7.2 };
                         leafy.Fill = new LinearGradientBrush(lt, c.Tint, 45.0);
-                        leafy.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
+                        leafy.Stroke = new SolidColorBrush(petalDump
+                            ? Color.FromArgb(140, 190, 85, 120)
+                            : Color.FromArgb(120, 90, 50, 25));
                         leafy.StrokeThickness = 0.6;
                         leafy.RenderTransform = new RotateTransform(c.Rot);
                         c.Shape = leafy;
@@ -4812,6 +4822,18 @@ namespace DesktopSnow
 
         Color PickLeafTint()
         {
+            if (_season == Season.Spring)
+            {
+                Color[] sakura = new Color[]
+                {
+                    Color.FromRgb(255, 168, 190),
+                    Color.FromRgb(255, 138, 168),
+                    Color.FromRgb(255, 205, 220),
+                    Color.FromRgb(247, 112, 148),
+                    Color.FromRgb(255, 183, 205)
+                };
+                return sakura[_rng.Next(sakura.Length)];
+            }
             Color[] pal = new Color[] {
                 Color.FromRgb(200, 90, 40),
                 Color.FromRgb(224, 130, 50),
@@ -4827,8 +4849,9 @@ namespace DesktopSnow
             if (_canvas == null || _roofCanvas == null) return;
             if (_decos.Count >= 1200) return;
             DriftDeco d = new DriftDeco();
-            double w = 11.0 + _rng.NextDouble() * 5.0;
-            double h = w * (0.55 + _rng.NextDouble() * 0.12);
+            bool petal = _season == Season.Spring;
+            double w = petal ? 9.5 + _rng.NextDouble() * 4.5 : 11.0 + _rng.NextDouble() * 5.0;
+            double h = w * (petal ? 0.60 + _rng.NextDouble() * 0.14 : 0.55 + _rng.NextDouble() * 0.12);
             d.W2 = w * 0.5;
             d.H2 = h * 0.5;
             d.EmbedOff = y - surfY;
@@ -4849,7 +4872,9 @@ namespace DesktopSnow
                 (byte)Math.Min(255, tint.G + 45),
                 (byte)Math.Min(255, tint.B + 45));
             leaf.Fill = Frozen(new LinearGradientBrush(light, tint, 45.0));
-            leaf.Stroke = Frozen(new SolidColorBrush(Color.FromArgb(120, 90, 50, 25)));
+            leaf.Stroke = Frozen(new SolidColorBrush(petal
+                ? Color.FromArgb(140, 190, 85, 120)
+                : Color.FromArgb(120, 90, 50, 25)));
             leaf.StrokeThickness = 0.6;
             leaf.RenderTransform = new RotateTransform(_rng.NextDouble() * 360.0);
             leaf.Opacity = 0.7 + _rng.NextDouble() * 0.3;
@@ -4884,7 +4909,7 @@ namespace DesktopSnow
             for (int i = _decos.Count - 1; i >= 0; i--)
             {
                 DriftDeco d = _decos[i];
-                if (_season != Season.Autumn && d.Life > 2.0) d.Life = 2.0;
+                if (_season != Season.Autumn && _season != Season.Spring && d.Life > 2.0) d.Life = 2.0;
                 bool clipStale = d.OnRoof && d.Ref != null && d.Ref.ClipVer != d.ClipVer;
                 if (((_driftTick + i) % 10 == 0 || clipStale) && !ReanchorDeco(d))
                 {
