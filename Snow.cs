@@ -105,7 +105,7 @@ namespace DesktopSnow
         static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
-        const string AppVersion = "0.9.8";
+        const string AppVersion = "0.9.9";
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         const string SettingsKeyPath = "Software\\DesktopSnow";
 
@@ -231,7 +231,7 @@ namespace DesktopSnow
         System.Windows.Controls.Primitives.UniformGrid _ugA;
         System.Windows.Controls.Primitives.UniformGrid _ugT;
         readonly Random _rng = new Random();
-        int _targetCount = 180;
+        int _targetCount = 140;
         SnowMode _mode = SnowMode.DesktopOnly;
         bool _attachedBehindIcons;
         bool _userWantsScreensaver;
@@ -240,6 +240,7 @@ namespace DesktopSnow
         Polygon _drift;
         double[] _depths;
         double[] _driftTmp;
+        double[] _roofSmoothTmp2;
         int _driftSegment = 16;
         int _driftTick = 0;
         double _groundY;
@@ -349,6 +350,8 @@ namespace DesktopSnow
             public int LastOcclLogTick = -1000;
             public Geometry ClipCached;
             public double ClipCacheSig = -1.0;
+            public bool DepthDirty = true;
+            public double[] SmoothTmp;
         }
 
         class Confetto
@@ -2785,7 +2788,7 @@ namespace DesktopSnow
             AddFlakes(_targetCount);
             _clock = Stopwatch.StartNew();
             _timer = new DispatcherTimer(DispatcherPriority.Render);
-            _timer.Interval = TimeSpan.FromMilliseconds(24);
+            _timer.Interval = TimeSpan.FromMilliseconds(16);
             _timer.Tick += Tick;
             _timer.Start();
         }
@@ -2946,8 +2949,8 @@ namespace DesktopSnow
             _sparkleTimer -= dt;
             if (_sparkleTimer <= 0.0)
             {
-                _sparkleTimer = 0.08 + _rng.NextDouble() * 0.16;
-                if (_sparklesEnabled && _depths != null && _groundY > 0 && _sparkles.Count < 40)
+                _sparkleTimer = 0.14 + _rng.NextDouble() * 0.25;
+                if (_sparklesEnabled && _depths != null && _groundY > 0 && _sparkles.Count < 24)
                 {
                     for (int tries = 0; tries < 3; tries++)
                     {
@@ -2960,7 +2963,7 @@ namespace DesktopSnow
                         }
                     }
                 }
-                if (_sparklesEnabled && _roofs.Count > 0 && _sparkles.Count < 60 && _rng.NextDouble() < 0.6)
+                if (_sparklesEnabled && _roofs.Count > 0 && _sparkles.Count < 36 && _rng.NextDouble() < 0.6)
                 {
                     Roof rr = _roofs[_rng.Next(_roofs.Count)];
                     if (rr.Depths != null && rr.Depths.Length > 4)
@@ -2981,11 +2984,11 @@ namespace DesktopSnow
             if (_decoTimer <= 0.0)
             {
                 _decoTimer = 0.08 + _rng.NextDouble() * 0.12;
-                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 2000)
+                if (_season == Season.Autumn && _sparklesEnabled && _decos.Count < 1200)
                 {
-                    for (int dk = 0; dk < 18; dk++)
+                    for (int dk = 0; dk < 8; dk++)
                     {
-                        if (_decos.Count >= 2000) break;
+                        if (_decos.Count >= 1200) break;
                         SpawnDriftDeco();
                     }
                 }
@@ -3017,7 +3020,7 @@ namespace DesktopSnow
             UpdateConfetti(dt);
             UpdateBalls(dt);
             RabbitTick(dt);
-            if (_moonGlow != null) _moonGlow.Opacity = 0.55 + Math.Sin(_t * 0.6) * 0.25;
+            if (_moonGlow != null && _driftTick % 3 == 0) _moonGlow.Opacity = 0.55 + Math.Sin(_t * 0.6) * 0.25;
             if (_showLeft > 0)
             {
                 _showTimer -= dt;
@@ -3055,7 +3058,7 @@ namespace DesktopSnow
             }
             if (_driftTick % 60 == 0) UpdateCountdown();
             if (_driftTick % 6 == 0) UpdateDriftShape();
-            if (_driftTick % 4 == 0) RefreshRoofs();
+            if (_driftTick % 10 == 0) RefreshRoofs();
             RoofMeltAndSmooth(_driftTick % 2 == 0);
             UpdateRoofShapes();
             if (_roofHwnd != IntPtr.Zero && _driftTick % 30 == 0)
@@ -3098,7 +3101,7 @@ namespace DesktopSnow
                         {
                             if (IsRoofOccluded(r, f.X)) continue;
                             DepositRoof(r, f.X, f.R * 5.0);
-                            if (_season == Season.Autumn && _decos.Count < 2000)
+                            if (_season == Season.Autumn && _decos.Count < 1200)
                             {
                                 int li = (int)((f.X - r.L) / _driftSegment);
                                 if (li < 0) li = 0;
@@ -3124,7 +3127,7 @@ namespace DesktopSnow
                     else
                     {
                         DepositSnow(f.X, f.R * 5.0);
-                        if (_season == Season.Autumn && _decos.Count < 2000)
+                        if (_season == Season.Autumn && _decos.Count < 1200)
                         {
                             SpawnLeafDecoAt(f.X, _groundY - _depths[DriftIndexFor(f.X)] - 1.0 + _rng.NextDouble() * 2.5, false, null, f.Tint, _groundY - _depths[DriftIndexFor(f.X)]);
                         }
@@ -3845,6 +3848,7 @@ namespace DesktopSnow
             if (baseClip == null) return null;
             Geometry g = baseClip.CloneCurrentValue();
             g.Transform = new TranslateTransform(dx, dy);
+            if (g.CanFreeze) g.Freeze();
             return g;
         }
 
@@ -4140,6 +4144,7 @@ namespace DesktopSnow
         void ReleaseRoofSnow(Roof roof, bool quiet)
         {
             if (roof.Depths == null || _canvas == null) return;
+            roof.DepthDirty = true;
             for (int i = _decos.Count - 1; i >= 0; i--)
             {
                 if (_decos[i].OnRoof && _decos[i].Ref == roof) KillDeco(_decos[i], i);
@@ -4270,13 +4275,30 @@ namespace DesktopSnow
                         if (dep[i] < 0) dep[i] = 0;
                     }
                 }
+                if (_roofs[ri].SmoothTmp == null || _roofs[ri].SmoothTmp.Length != dep.Length)
+                    _roofs[ri].SmoothTmp = new double[dep.Length];
+                if (_roofSmoothTmp2 == null || _roofSmoothTmp2.Length < dep.Length)
+                    _roofSmoothTmp2 = new double[dep.Length];
+                double[] orig = _roofs[ri].SmoothTmp;
+                for (int i = 0; i < dep.Length; i++) orig[i] = dep[i];
                 for (int pass = 0; pass < 2; pass++)
                 {
-                    double[] tmp = new double[dep.Length];
-                    for (int i = 0; i < dep.Length; i++) tmp[i] = dep[i];
+                    double[] tmp = (pass == 0) ? orig : _roofSmoothTmp2;
+                    if (pass == 1)
+                    {
+                        for (int i = 0; i < dep.Length; i++) tmp[i] = dep[i];
+                    }
                     for (int i = 1; i < dep.Length - 1; i++)
                     {
                         dep[i] = (tmp[i - 1] + 2.0 * tmp[i] + tmp[i + 1]) * 0.25;
+                    }
+                }
+                for (int i = 0; i < dep.Length; i++)
+                {
+                    if (Math.Abs(dep[i] - orig[i]) > 0.02)
+                    {
+                        _roofs[ri].DepthDirty = true;
+                        break;
                     }
                 }
             }
@@ -4293,13 +4315,16 @@ namespace DesktopSnow
                 for (int i = 0; i < r.Depths.Length; i++) total += r.Depths[i];
                 if (total < 0.5)
                 {
-                    if (r.Poly != null && r.Poly.Points.Count > 0)
+                    if (r.Poly != null && (r.Poly.Points.Count > 0 || r.DepthDirty))
                     {
                         r.Poly.Points = new PointCollection();
                         r.Poly.Clip = null;
+                        r.DepthDirty = false;
                     }
                     continue;
                 }
+                if (!r.DepthDirty && r.Poly != null && r.Poly.Points.Count > 0) continue;
+                r.DepthDirty = false;
                 if (r.Poly == null)
                 {
                     r.Poly = new Polygon();
@@ -4361,7 +4386,9 @@ namespace DesktopSnow
                     dr.LastClipX = dr.X;
                     dr.LastClipY = dr.Y;
                     dr.LastClipVer = owner.ClipVer;
-                    dr.Shape.Clip = ComputeDropClipAt(owner, dr.X, dr.Y);
+                    Geometry dc = ComputeDropClipAt(owner, dr.X, dr.Y);
+                    if (dc.CanFreeze) dc.Freeze();
+                    dr.Shape.Clip = dc;
                 }
             }
         }
@@ -4369,6 +4396,7 @@ namespace DesktopSnow
         void DepositRoof(Roof roof, double x, double amount)
         {
             if (roof.Depths == null) return;
+            roof.DepthDirty = true;
             int idx = (int)((x - roof.L) / _driftSegment);
             if (idx < 0) idx = 0;
             if (idx >= roof.Depths.Length) idx = roof.Depths.Length - 1;
@@ -4797,7 +4825,7 @@ namespace DesktopSnow
         void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint, double surfY)
         {
             if (_canvas == null || _roofCanvas == null) return;
-            if (_decos.Count >= 2000) return;
+            if (_decos.Count >= 1200) return;
             DriftDeco d = new DriftDeco();
             double w = 11.0 + _rng.NextDouble() * 5.0;
             double h = w * (0.55 + _rng.NextDouble() * 0.12);
