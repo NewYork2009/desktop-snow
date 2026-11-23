@@ -111,6 +111,12 @@ namespace DesktopSnow
 
         static string _logPath;
 
+        static Brush Frozen(Brush b)
+        {
+            if (b.CanFreeze) b.Freeze();
+            return b;
+        }
+
         static void Log(string message)
         {
             try
@@ -321,6 +327,9 @@ namespace DesktopSnow
             public double RotTarget;
             public RotateTransform Rtf;
             public Canvas Shape;
+            public double LastClipX = -99999.0;
+            public double LastClipY = -99999.0;
+            public int LastClipVer = -1;
         }
 
         class Roof
@@ -338,6 +347,8 @@ namespace DesktopSnow
             public double OcclSig = -1.0;
             public int LastOccluders = -1;
             public int LastOcclLogTick = -1000;
+            public Geometry ClipCached;
+            public double ClipCacheSig = -1.0;
         }
 
         class Confetto
@@ -440,6 +451,7 @@ namespace DesktopSnow
             public double W;
             public double Phase;
             public Polygon Shape;
+            public int ClipVer = -1;
         }
 
         class IcicleDrip
@@ -832,7 +844,7 @@ namespace DesktopSnow
         {
             if (_drift != null)
             {
-                _drift.Fill = new LinearGradientBrush(SeasonDriftTop(), SeasonDriftBottom(), 90.0);
+                _drift.Fill = Frozen(new LinearGradientBrush(SeasonDriftTop(), SeasonDriftBottom(), 90.0));
                 _drift.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
             }
             if (_roofCanvas != null)
@@ -842,7 +854,7 @@ namespace DesktopSnow
                     Roof r = _roofs[i];
                     if (r.Poly != null)
                     {
-                        r.Poly.Fill = new SolidColorBrush(SeasonDriftTop());
+                        r.Poly.Fill = Frozen(new SolidColorBrush(SeasonDriftTop()));
                         r.Poly.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
                     }
                 }
@@ -1260,7 +1272,7 @@ namespace DesktopSnow
             f.Life = 3.5 + _rng.NextDouble() * 2.5;
             f.Phase = _rng.NextDouble() * Math.PI * 2.0;
             Ellipse shape = new Ellipse { Width = 4.5, Height = 11.0 };
-            shape.Fill = new LinearGradientBrush(Color.FromRgb(250, 248, 240), Color.FromRgb(225, 218, 200), 90.0);
+            shape.Fill = Frozen(new LinearGradientBrush(Color.FromRgb(250, 248, 240), Color.FromRgb(225, 218, 200), 90.0));
             RotateTransform rtf = new RotateTransform(0.0);
             shape.RenderTransform = rtf;
             shape.RenderTransformOrigin = new Point(0.5, 0.5);
@@ -1367,8 +1379,8 @@ namespace DesktopSnow
                 (byte)Math.Min(255, f.Tint.B + 45));
 
             Ellipse shape = new Ellipse { Width = 12.5, Height = 7.2 };
-            shape.Fill = new LinearGradientBrush(light, f.Tint, 45.0);
-            shape.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
+            shape.Fill = Frozen(new LinearGradientBrush(light, f.Tint, 45.0));
+            shape.Stroke = Frozen(new SolidColorBrush(Color.FromArgb(120, 90, 50, 25)));
             shape.StrokeThickness = 0.6;
             shape.Opacity = f.Opacity;
             RotateTransform rt = new RotateTransform(_rng.NextDouble() * 360.0);
@@ -1403,7 +1415,7 @@ namespace DesktopSnow
             shape.Y1 = 0;
             shape.X2 = dx;
             shape.Y2 = len;
-            shape.Stroke = new SolidColorBrush(Color.FromArgb(175, 150, 195, 240));
+            shape.Stroke = Frozen(new SolidColorBrush(Color.FromArgb(175, 150, 195, 240)));
             shape.StrokeThickness = 1.4;
             shape.StrokeEndLineCap = PenLineCap.Round;
             shape.Opacity = f.Opacity;
@@ -2773,7 +2785,7 @@ namespace DesktopSnow
             AddFlakes(_targetCount);
             _clock = Stopwatch.StartNew();
             _timer = new DispatcherTimer(DispatcherPriority.Render);
-            _timer.Interval = TimeSpan.FromMilliseconds(16);
+            _timer.Interval = TimeSpan.FromMilliseconds(24);
             _timer.Tick += Tick;
             _timer.Start();
         }
@@ -2786,7 +2798,7 @@ namespace DesktopSnow
             _groundY = SystemParameters.WorkArea.Bottom - SystemParameters.VirtualScreenTop;
 
             _drift = new Polygon();
-            _drift.Fill = new LinearGradientBrush(SeasonDriftTop(), SeasonDriftBottom(), 90.0);
+            _drift.Fill = Frozen(new LinearGradientBrush(SeasonDriftTop(), SeasonDriftBottom(), 90.0));
             _drift.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
             System.Windows.Controls.Panel.SetZIndex(_drift, 50);
             _canvas.Children.Insert(0, _drift);
@@ -2884,6 +2896,12 @@ namespace DesktopSnow
         {
             double dt = Math.Min((double)_clock.ElapsedMilliseconds / 1000, 0.05);
             _clock.Restart();
+            if (_fullscreenPresent)
+            {
+                _driftTick++;
+                if (_driftTick % 20 == 0) RefreshRoofs();
+                return;
+            }
             _t += dt;
             _wind = Math.Sin(_t / 6.5) * 18 + Math.Sin(_t / 2.3) * 6;
             if (_season == Season.Autumn)
@@ -3037,7 +3055,9 @@ namespace DesktopSnow
             }
             if (_driftTick % 60 == 0) UpdateCountdown();
             if (_driftTick % 6 == 0) UpdateDriftShape();
-            RefreshRoofs();
+            if (_driftTick % 4 == 0) RefreshRoofs();
+            RoofMeltAndSmooth(_driftTick % 2 == 0);
+            UpdateRoofShapes();
             if (_roofHwnd != IntPtr.Zero && _driftTick % 30 == 0)
             {
                 ApplyRoofStyles(_roofHwnd);
@@ -3807,6 +3827,27 @@ namespace DesktopSnow
             return g;
         }
 
+        Geometry GetCachedRoofClip(Roof roof)
+        {
+            if (roof.ClipCached == null || roof.ClipCacheSig != roof.OcclSig)
+            {
+                Geometry g = ComputeRoofClip(roof);
+                if (g.CanFreeze) g.Freeze();
+                roof.ClipCached = g;
+                roof.ClipCacheSig = roof.OcclSig;
+            }
+            return roof.ClipCached;
+        }
+
+        Geometry ClonedRoofClip(Roof roof, double dx, double dy)
+        {
+            Geometry baseClip = GetCachedRoofClip(roof);
+            if (baseClip == null) return null;
+            Geometry g = baseClip.CloneCurrentValue();
+            g.Transform = new TranslateTransform(dx, dy);
+            return g;
+        }
+
         Geometry ComputeRoofClip(Roof roof)
         {
             Rect band = new Rect(roof.L + 1.0, roof.T - 100.0, Math.Max(4.0, (roof.R - roof.L) - 2.0), 148.0);
@@ -3836,9 +3877,9 @@ namespace DesktopSnow
                 new Point(w * 0.5, h), new Point(w * 0.42, h * 0.7),
                 new Point(w * 0.28, h * 0.35)
             };
-            p.Fill = new LinearGradientBrush(
-                Color.FromRgb(234, 244, 255), Color.FromArgb(170, 175, 210, 240), 90.0);
-            p.Stroke = new SolidColorBrush(Color.FromArgb(120, 150, 185, 225));
+            p.Fill = Frozen(new LinearGradientBrush(
+                Color.FromRgb(234, 244, 255), Color.FromArgb(170, 175, 210, 240), 90.0));
+            p.Stroke = Frozen(new SolidColorBrush(Color.FromArgb(120, 150, 185, 225)));
             p.StrokeThickness = 1.0;
             p.Opacity = 0.9;
             return p;
@@ -3874,9 +3915,7 @@ namespace DesktopSnow
                 Canvas.SetLeft(p, x);
                 Canvas.SetTop(p, y);
                 System.Windows.Controls.Panel.SetZIndex(p, 46);
-                Geometry iclip = ComputeRoofClip(r);
-                if (iclip != null) iclip.Transform = new TranslateTransform(-x, -y);
-                p.Clip = iclip;
+                p.Clip = ClonedRoofClip(r, -x, -y);
                 _roofCanvas.Children.Add(p);
                 Icicle ic = new Icicle();
                 ic.Roof = r;
@@ -3885,6 +3924,7 @@ namespace DesktopSnow
                 ic.W = w;
                 ic.H = h;
                 ic.Phase = _rng.NextDouble() * 6.0;
+                ic.ClipVer = r.ClipVer;
                 ic.Shape = p;
                 _icicles.Add(ic);
                 return;
@@ -3937,6 +3977,11 @@ namespace DesktopSnow
                     if (ic.Shape != null)
                     {
                         ic.Shape.Visibility = hidden ? Visibility.Collapsed : Visibility.Visible;
+                        if (!hidden && ic.ClipVer != r2.ClipVer)
+                        {
+                            ic.ClipVer = r2.ClipVer;
+                            ic.Shape.Clip = ClonedRoofClip(r2, -ic.X, Canvas.GetTop(ic.Shape));
+                        }
                         ic.Shape.Opacity = 0.8 + Math.Sin(ic.Phase * 2.2) * 0.2;
                     }
                     if (!hidden)
@@ -4090,8 +4135,6 @@ namespace DesktopSnow
                 }
             }
 
-            RoofMeltAndSmooth(_driftTick % 2 == 0);
-            UpdateRoofShapes();
         }
 
         void ReleaseRoofSnow(Roof roof, bool quiet)
@@ -4179,7 +4222,7 @@ namespace DesktopSnow
                 {
                     Width = 2.5 + _rng.NextDouble() * 2.5,
                     Height = 2.5 + _rng.NextDouble() * 2.5,
-                    Fill = new SolidColorBrush(SeasonSplashColor())
+                    Fill = Frozen(new SolidColorBrush(SeasonSplashColor()))
                 };
                 c.Shape = puff;
                 System.Windows.Controls.Panel.SetZIndex(puff, 80);
@@ -4260,7 +4303,7 @@ namespace DesktopSnow
                 if (r.Poly == null)
                 {
                     r.Poly = new Polygon();
-                    r.Poly.Fill = new SolidColorBrush(SeasonDriftTop());
+                    r.Poly.Fill = Frozen(new SolidColorBrush(SeasonDriftTop()));
                     r.Poly.Opacity = (_season == Season.Summer) ? 0.8 : 0.95;
                     System.Windows.Controls.Panel.SetZIndex(r.Poly, 50);
                     _roofCanvas.Children.Add(r.Poly);
@@ -4294,8 +4337,7 @@ namespace DesktopSnow
                 pts.Add(new Point(r.L + b * _driftSegment, r.T + 2));
                 pts.Add(new Point(r.L + a * _driftSegment, r.T + 2));
                 r.Poly.Points = pts;
-                Geometry clip = ComputeRoofClip(r);
-                r.Poly.Clip = clip;
+                r.Poly.Clip = GetCachedRoofClip(r);
             }
 
             for (int i = 0; i < _drops.Count; i++)
@@ -4307,7 +4349,20 @@ namespace DesktopSnow
                     continue;
                 }
                 Roof owner = RoofByHwnd(dr.RoofHwnd);
-                dr.Shape.Clip = (owner != null) ? ComputeDropClipAt(owner, dr.X, dr.Y) : null;
+                if (owner == null)
+                {
+                    dr.Shape.Clip = null;
+                    continue;
+                }
+                if (dr.LastClipVer != owner.ClipVer ||
+                    Math.Abs(dr.X - dr.LastClipX) > 0.5 ||
+                    Math.Abs(dr.Y - dr.LastClipY) > 0.5)
+                {
+                    dr.LastClipX = dr.X;
+                    dr.LastClipY = dr.Y;
+                    dr.LastClipVer = owner.ClipVer;
+                    dr.Shape.Clip = ComputeDropClipAt(owner, dr.X, dr.Y);
+                }
             }
         }
 
@@ -4765,8 +4820,8 @@ namespace DesktopSnow
                 (byte)Math.Min(255, tint.R + 45),
                 (byte)Math.Min(255, tint.G + 45),
                 (byte)Math.Min(255, tint.B + 45));
-            leaf.Fill = new LinearGradientBrush(light, tint, 45.0);
-            leaf.Stroke = new SolidColorBrush(Color.FromArgb(120, 90, 50, 25));
+            leaf.Fill = Frozen(new LinearGradientBrush(light, tint, 45.0));
+            leaf.Stroke = Frozen(new SolidColorBrush(Color.FromArgb(120, 90, 50, 25)));
             leaf.StrokeThickness = 0.6;
             leaf.RenderTransform = new RotateTransform(_rng.NextDouble() * 360.0);
             leaf.Opacity = 0.7 + _rng.NextDouble() * 0.3;
@@ -4785,9 +4840,7 @@ namespace DesktopSnow
             {
                 if (refRoof != null)
                 {
-                    Geometry rclip = ComputeRoofClip(refRoof);
-                    if (rclip != null) rclip.Transform = new TranslateTransform(w * 0.5 - x, h * 0.5 - y);
-                    leaf.Clip = rclip;
+                    leaf.Clip = ClonedRoofClip(refRoof, w * 0.5 - x, h * 0.5 - y);
                 }
                 _roofCanvas.Children.Add(leaf);
             }
@@ -4850,9 +4903,7 @@ namespace DesktopSnow
             Canvas.SetTop(d.Shape, d.Y - d.H2);
             if (d.OnRoof && d.Ref != null)
             {
-                Geometry g = ComputeRoofClip(d.Ref);
-                if (g != null) g.Transform = new TranslateTransform(d.W2 - d.X, d.H2 - d.Y);
-                d.Shape.Clip = g;
+                d.Shape.Clip = ClonedRoofClip(d.Ref, d.W2 - d.X, d.H2 - d.Y);
                 d.ClipVer = d.Ref.ClipVer;
             }
             return true;
