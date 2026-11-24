@@ -105,7 +105,35 @@ namespace DesktopSnow
         static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
 
         const string AppName = "DesktopSnow";
-        const string AppVersion = "1.0.1";
+        const string AppVersion = "1.0.2";
+
+        // палитры вынесены в статику, чтобы не аллоцировать при каждом спавне
+        static readonly Color[] SakuraTints = new Color[]
+        {
+            Color.FromRgb(255, 168, 190),
+            Color.FromRgb(255, 138, 168),
+            Color.FromRgb(255, 205, 220),
+            Color.FromRgb(247, 112, 148),
+            Color.FromRgb(255, 183, 205)
+        };
+        static readonly Color[] LeafTints = new Color[]
+        {
+            Color.FromRgb(200, 90, 40),
+            Color.FromRgb(224, 130, 50),
+            Color.FromRgb(240, 180, 60),
+            Color.FromRgb(150, 70, 35),
+            Color.FromRgb(190, 110, 45)
+        };
+        static readonly Color[] AutumnSplashTints = new Color[]
+        {
+            Color.FromRgb(196, 110, 50), Color.FromRgb(216, 158, 86),
+            Color.FromRgb(150, 96, 48), Color.FromRgb(178, 140, 58)
+        };
+        static readonly Color[] SpringSplashTints = new Color[]
+        {
+            Color.FromRgb(255, 205, 228), Color.FromRgb(248, 180, 215),
+            Color.FromRgb(255, 233, 245)
+        };
         const string RunKeyPath = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
         const string SettingsKeyPath = "Software\\DesktopSnow";
 
@@ -820,21 +848,11 @@ namespace DesktopSnow
         {
             if (_season == Season.Autumn)
             {
-                Color[] pal = new Color[]
-                {
-                    Color.FromRgb(196, 110, 50), Color.FromRgb(216, 158, 86),
-                    Color.FromRgb(150, 96, 48), Color.FromRgb(178, 140, 58)
-                };
-                return pal[_rng.Next(pal.Length)];
+                return AutumnSplashTints[_rng.Next(AutumnSplashTints.Length)];
             }
             if (_season == Season.Spring)
             {
-                Color[] pal = new Color[]
-                {
-                    Color.FromRgb(255, 205, 228), Color.FromRgb(248, 180, 215),
-                    Color.FromRgb(255, 233, 245)
-                };
-                return pal[_rng.Next(pal.Length)];
+                return SpringSplashTints[_rng.Next(SpringSplashTints.Length)];
             }
             if (_season == Season.Summer)
             {
@@ -1329,15 +1347,7 @@ namespace DesktopSnow
             f.Y = randomY ? _rng.NextDouble() * (H() + 80) : -10 - _rng.NextDouble() * 40;
             f.RotSpeed = -90 + _rng.NextDouble() * 180;
 
-            Color[] tints = new Color[]
-            {
-                Color.FromRgb(255, 168, 190),
-                Color.FromRgb(255, 138, 168),
-                Color.FromRgb(255, 205, 220),
-                Color.FromRgb(247, 112, 148),
-                Color.FromRgb(255, 183, 205)
-            };
-            f.Tint = tints[_rng.Next(tints.Length)];
+            f.Tint = SakuraTints[_rng.Next(SakuraTints.Length)];
             Color light = Color.FromRgb(
                 (byte)Math.Min(255, f.Tint.R + 45),
                 (byte)Math.Min(255, f.Tint.G + 45),
@@ -1374,15 +1384,7 @@ namespace DesktopSnow
             f.Y = randomY ? _rng.NextDouble() * (H() + 80) : -12 - _rng.NextDouble() * 40;
             f.RotSpeed = -140 + _rng.NextDouble() * 280;
 
-            Color[] tints = new Color[]
-            {
-                Color.FromRgb(200, 90, 40),
-                Color.FromRgb(224, 130, 50),
-                Color.FromRgb(240, 180, 60),
-                Color.FromRgb(150, 70, 35),
-                Color.FromRgb(190, 110, 45)
-            };
-            f.Tint = tints[_rng.Next(tints.Length)];
+            f.Tint = LeafTints[_rng.Next(LeafTints.Length)];
             Color light = Color.FromRgb(
                 (byte)Math.Min(255, f.Tint.R + 45),
                 (byte)Math.Min(255, f.Tint.G + 45),
@@ -2842,16 +2844,24 @@ namespace DesktopSnow
 
         void UpdateDriftShape()
         {
-            PointCollection pts = new PointCollection();
-            pts.Add(new Point(0, _groundY));
+            PointCollection pts = _drift.Points;
+            int need = _depths.Length + 2;
+            if (pts == null || pts.Count != need)
+            {
+                pts = new PointCollection(need);
+                pts.Add(new Point(0, _groundY));
+                for (int i = 0; i < _depths.Length; i++) pts.Add(new Point(0, 0));
+                pts.Add(new Point(W(), _groundY));
+                _drift.Points = pts;
+            }
             for (int i = 0; i < _depths.Length; i++)
             {
                 double wobble = 1.0 + 0.05 * Math.Sin(i * 0.31 + _t * 0.4);
                 double baseLine = Math.Min(1.2, _depths[i] * 0.25);
-                pts.Add(new Point(i * _driftSegment, _groundY - _depths[i] * wobble - baseLine));
+                pts[i + 1] = new Point(i * _driftSegment, _groundY - _depths[i] * wobble - baseLine);
             }
-            pts.Add(new Point(W(), _groundY));
-            _drift.Points = pts;
+            pts[0] = new Point(0, _groundY);
+            pts[need - 1] = new Point(W(), _groundY);
         }
 
         void AddFlakes(int count)
@@ -2924,32 +2934,35 @@ namespace DesktopSnow
 
             double width = SystemParameters.VirtualScreenWidth;
 
-            for (int i = 0; i < _depths.Length; i++)
+            if (_driftTick % 2 == 0)
             {
-                double excess = _depths[i] - DriftSoftCap;
-                if (excess > 0.0)
+                for (int i = 0; i < _depths.Length; i++)
                 {
-                    _depths[i] -= (excess * 0.3) * dt;
+                    double excess = _depths[i] - DriftSoftCap;
+                    if (excess > 0.0)
+                    {
+                        _depths[i] -= (excess * 0.6) * dt;
+                    }
+                    if (_depths[i] > _maxDrift) _depths[i] = _maxDrift;
                 }
-                if (_depths[i] > _maxDrift) _depths[i] = _maxDrift;
-            }
 
-            // сглаживание: холмы превращаются в плавные дуги, а не треугольники
-            if (_driftTmp == null || _driftTmp.Length != _depths.Length)
-            {
-                _driftTmp = new double[_depths.Length];
-            }
-            for (int pass = 0; pass < 2; pass++)
-            {
-                for (int i = 0; i < _depths.Length; i++) _driftTmp[i] = _depths[i];
-                for (int i = 1; i < _depths.Length - 1; i++)
+                // сглаживание: холмы превращаются в плавные дуги, а не треугольники
+                if (_driftTmp == null || _driftTmp.Length != _depths.Length)
                 {
-                    _depths[i] = (_driftTmp[i - 1] + 2.0 * _driftTmp[i] + _driftTmp[i + 1]) * 0.25;
+                    _driftTmp = new double[_depths.Length];
                 }
-            }
-            for (int i = 0; i < _depths.Length; i++)
-            {
-                if (_depths[i] < 0) _depths[i] = 0;
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    for (int i = 0; i < _depths.Length; i++) _driftTmp[i] = _depths[i];
+                    for (int i = 1; i < _depths.Length - 1; i++)
+                    {
+                        _depths[i] = (_driftTmp[i - 1] + 2.0 * _driftTmp[i] + _driftTmp[i + 1]) * 0.25;
+                    }
+                }
+                for (int i = 0; i < _depths.Length; i++)
+                {
+                    if (_depths[i] < 0) _depths[i] = 0;
+                }
             }
 
 
@@ -2991,7 +3004,7 @@ namespace DesktopSnow
             if (_decoTimer <= 0.0)
             {
                 _decoTimer = 0.08 + _rng.NextDouble() * 0.12;
-                if ((_season == Season.Autumn || _season == Season.Spring) && _sparklesEnabled && _decos.Count < 1200)
+                if ((_season == Season.Autumn || _season == Season.Spring) && _decos.Count < 1200)
                 {
                     for (int dk = 0; dk < 8; dk++)
                     {
@@ -3064,9 +3077,9 @@ namespace DesktopSnow
                 }
             }
             if (_driftTick % 60 == 0) UpdateCountdown();
-            if (_driftTick % 6 == 0) UpdateDriftShape();
+            if (_driftTick % 12 == 0) UpdateDriftShape();
             if (_driftTick % 10 == 0) RefreshRoofs();
-            RoofMeltAndSmooth(_driftTick % 2 == 0);
+            if (_driftTick % 2 == 0) RoofMeltAndSmooth(_driftTick % 4 == 0);
             UpdateRoofShapes();
             if (_roofHwnd != IntPtr.Zero && _driftTick % 30 == 0)
             {
@@ -4270,7 +4283,7 @@ namespace DesktopSnow
 
         void RoofMeltAndSmooth(bool melt)
         {
-            double dt = 0.16;
+            double dt = 0.32;
             for (int ri = 0; ri < _roofs.Count; ri++)
             {
                 double[] dep = _roofs[ri].Depths;
@@ -4824,24 +4837,9 @@ namespace DesktopSnow
         {
             if (_season == Season.Spring)
             {
-                Color[] sakura = new Color[]
-                {
-                    Color.FromRgb(255, 168, 190),
-                    Color.FromRgb(255, 138, 168),
-                    Color.FromRgb(255, 205, 220),
-                    Color.FromRgb(247, 112, 148),
-                    Color.FromRgb(255, 183, 205)
-                };
-                return sakura[_rng.Next(sakura.Length)];
+                return SakuraTints[_rng.Next(SakuraTints.Length)];
             }
-            Color[] pal = new Color[] {
-                Color.FromRgb(200, 90, 40),
-                Color.FromRgb(224, 130, 50),
-                Color.FromRgb(240, 180, 60),
-                Color.FromRgb(150, 70, 35),
-                Color.FromRgb(190, 110, 45)
-            };
-            return pal[_rng.Next(pal.Length)];
+            return LeafTints[_rng.Next(LeafTints.Length)];
         }
 
         void SpawnLeafDecoAt(double x, double y, bool onRoof, Roof refRoof, Color tint, double surfY)
@@ -4954,7 +4952,7 @@ namespace DesktopSnow
             }
             if (d.Y > H()) return false;
             Canvas.SetTop(d.Shape, d.Y - d.H2);
-            if (d.OnRoof && d.Ref != null)
+            if (d.OnRoof && d.Ref != null && (d.Shape.Clip == null || d.ClipVer != d.Ref.ClipVer))
             {
                 d.Shape.Clip = ClonedRoofClip(d.Ref, d.W2 - d.X, d.H2 - d.Y);
                 d.ClipVer = d.Ref.ClipVer;
